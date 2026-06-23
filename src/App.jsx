@@ -120,7 +120,7 @@ function App() {
     }
   }
 
-  // 🌟 FIXED: Conditionally handle roles to protect unauthorized API calls from throwing a 403
+  // Conditionally handle roles to protect unauthorized API calls from throwing a 403
   async function refreshBaseData() {
     if (!token) return;
     await runAction(async () => {
@@ -609,7 +609,7 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
               <Panel title="Create performance evaluation metrics matrix">
                 <form className="grid gap-3 sm:grid-cols-2" onSubmit={createReview}>
                   <Input label="Cycle" value={review.cycle} onChange={(cycle) => setReview({ ...review, cycle })} required />
-                  <Input label="Manager rating" type="number" min="1" max="5" step="0.1" value={review.managerRating} onChange={(managerRating) => setReview({ ...review, managerRating })} required />
+                  <Input label="Manager rating" type="number" min="1" max="5" step="0.1" value={review.managerRating} onChange={(managerRating) => setReview({ ...run, managerRating })} required />
                   <Input label="Peer rating" type="number" min="1" max="5" step="0.1" value={review.peerRating} onChange={(peerRating) => setReview({ ...review, peerRating })} required />
                   <Input label="Self rating" type="number" min="1" max="5" step="0.1" value={review.selfRating} onChange={(selfRating) => setReview({ ...review, selfRating })} required />
                   <Field label="Feedback">
@@ -829,6 +829,12 @@ async function parseResponse(response) {
 
 function shortId(value) { return value ? `${value.slice(0, 8)}...` : "-"; }
 function money(value) { const number = Number(value || 0); return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(number); }
-function formatPercent(value) { if (value === undefined || value === null || value === "-") return "-"; const number = Number(value); return `${Math.round(number * 100)}%`; }
+
+// 🌟 FIXED: Removed the internal "* 100" modifier to support raw calculated percentage integrations accurately
+function formatPercent(value) {
+  if (value === undefined || value === null || value === "-") return "-";
+  const number = Number(value);
+  return `${Math.round(number)}%`;
+}
 
 export default App;
