@@ -142,8 +142,11 @@ function App() {
     });
   }
 
+  // 🌟 FIXED: Added security guard clause to stop unauthorized 403 network calls from employee roles
   async function refreshAttendanceDashboard() {
     if (!token) return;
+    if (userContext?.isEmployee) return;
+
     await runAction(async () => {
       setAttendanceMetrics(await api.get(`/api/v1/attendance/dashboard?date=${today}`));
     });
@@ -786,7 +789,6 @@ async function parseResponse(response) {
 function shortId(value) { return value ? `${value.slice(0, 8)}...` : "-"; }
 function money(value) { const number = Number(value || 0); return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(number); }
 
-// 🌟 RESTORED UTILITY: Helper function to accurately represent metric percentages
 function formatPercent(value) {
   if (value === undefined || value === null || value === "-") return "-";
   const number = Number(value);
