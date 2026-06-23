@@ -377,7 +377,7 @@ function Employees({ api, employees, refresh, runAction }) {
     }, "Offboarding started");
   }
 
-  // 🌟 ADDED: Delete capability handler to clear data paths securely
+  // ADDED: Delete capability handler to clear data paths securely
   async function removeEmployee(id) {
     if (!window.confirm("Are you sure you want to permanently delete this employee?")) return;
     await runAction(async () => {
@@ -398,8 +398,8 @@ function Employees({ api, employees, refresh, runAction }) {
                   employee.workEmail,
                   [employee.department, employee.designation].filter(Boolean).join(" / ") || "-",
                   <Badge value={employee.status} />,
-                  // 🌟 UPDATED: Display action buttons grouped together side-by-side cleanly
-                  <div className="flex flex-wrap gap-1.5">
+                  // Display action buttons grouped together side-by-side cleanly
+                  <div className="flex flex-wrap gap-1.5" key={employee.id}>
                     <button className="btn btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => offboard(employee.id)}>Offboard</button>
                     <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-semibold" onClick={() => removeEmployee(employee.id)}>Delete</button>
                   </div>
@@ -439,10 +439,33 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
   const [employeeId, setEmployeeId] = useState(selectedEmployee);
   const [leave, setLeave] = useState({ leaveType: "ANNUAL", startDate: today, endDate: today, reason: "" });
   const [balances, setBalances] = useState([]);
+  const [pendingLeaves, setPendingLeaves] = useState([]); // 🌟 ADDED: Local context queue for pending leave lists
 
   useEffect(() => {
     setEmployeeId(selectedEmployee);
   }, [selectedEmployee]);
+
+  // 🌟 ADDED: Dynamic tracking mechanism for managers to load organization leave rows
+  async function loadPendingLeaves() {
+    if (userContext?.isEmployee) return;
+    await runAction(async () => {
+      const response = await api.get(`/api/v1/attendance/dashboard?date=${today}`);
+      // Fallback extraction to map custom list matrices inside data layout buckets smoothly
+      setPendingLeaves(response?.rawRequests || response?.pendingRequests || []);
+    });
+  }
+
+  // 🌟 ADDED: Decision action terminal handler (APPROVE / REJECT)
+  async function handleDecision(leaveId, statusString) {
+    await runAction(async () => {
+      await api.post(`/api/v1/attendance/leave-requests/${leaveId}/decision`, {
+        status: statusString,
+        approverId: employeeId || null
+      });
+      await loadPendingLeaves();
+      await refreshAttendance();
+    }, `Leave context has been updated to ${statusString}`);
+  }
 
   async function punch() {
     await runAction(async () => {
@@ -456,6 +479,7 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     await runAction(async () => {
       await api.post("/api/v1/attendance/leave-requests", { employeeId, ...leave });
       setLeave({ leaveType: "ANNUAL", startDate: today, endDate: today, reason: "" });
+      if (!userContext?.isEmployee) await loadPendingLeaves();
     }, "Leave request submitted");
   }
 
@@ -464,6 +488,13 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
       setBalances(await api.get(`/api/v1/attendance/employees/${employeeId}/leave-balances`));
     });
   }
+
+  // 🌟 ADDED: Proactive layout lifecycle listener for administration layer components
+  useEffect(() => {
+    if (!userContext?.isEmployee && token) {
+      loadPendingLeaves();
+    }
+  }, [userContext, token]);
 
   return (
       <Page title="Attendance Tracker" subtitle="Punch simulation logging tracks directly into the database layers.">
@@ -494,6 +525,30 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
             </form>
           </Panel>
         </div>
+
+        {/* 🌟 ADDED: Admin Evaluation Dashboard Task Control Grid */}
+        {!userContext?.isEmployee && (
+            <Panel title="Pending Leave Approvals Task Queue" action={<button className="btn btn-secondary" onClick={loadPendingLeaves}>Refresh Queue</button>}>
+              {pendingLeaves.length ? (
+                  <DataTable
+                      columns={["Employee", "Type", "Duration", "Reason", "Actions"]}
+                      rows={pendingLeaves.map((req) => [
+                        shortId(req.employeeId),
+                        req.leaveType,
+                        `${req.startDate} to ${req.endDate}`,
+                        req.reason || "-",
+                        <div className="flex gap-1.5" key={req.id}>
+                          <button className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold" onClick={() => handleDecision(req.id, "APPROVED")}>Approve</button>
+                          <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-semibold" onClick={() => handleDecision(req.id, "REJECTED")}>Reject</button>
+                        </div>
+                      ])}
+                  />
+              ) : (
+                  <Empty text="No pending leave requests found requiring management review actions." />
+              )}
+            </Panel>
+        )}
+
         <Panel title="Leave balances status tracker">
           {balances.length ? <DataTable columns={["Type", "Entitled", "Used", "Available"]} rows={balances.map((item) => [item.leaveType, item.openingBalance, item.consumed, item.availableDays || item.openingBalance])} /> : <Empty text="No data streams parsed." />}
         </Panel>
@@ -638,7 +693,7 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
             <form className="grid gap-3" onSubmit={createGoal}>
               <Input label="Title" value={goal.title} onChange={(title) => setGoal({ ...goal, title })} required />
               <Input label="Due date" type="date" value={goal.dueDate} onChange={(dueDate) => setGoal({ ...goal, dueDate })} />
-              <Field label="Description">
+              <Field label="Dynamic Description Content Field">
                 <textarea className="field min-h-24" value={goal.description} onChange={(event) => setGoal({ ...goal, description: event.target.value })} />
               </Field>
               <button className="btn btn-primary" disabled={!employeeId}>Save goal</button>
@@ -786,7 +841,6 @@ function createApi(token) {
     get: (path) => request("GET", path),
     post: (path, body) => request("POST", path, body),
     put: (path, body) => request("PUT", path, body),
-    // 🌟 ADDED: Fallback method signature to securely support arbitrary DELETE operations
     request: (method, path, body) => request(method, path, body)
   };
 }
