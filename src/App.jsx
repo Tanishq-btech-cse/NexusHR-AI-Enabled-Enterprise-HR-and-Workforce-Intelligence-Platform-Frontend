@@ -377,7 +377,6 @@ function Employees({ api, employees, refresh, runAction }) {
     }, "Offboarding started");
   }
 
-  // ADDED: Delete capability handler to clear data paths securely
   async function removeEmployee(id) {
     if (!window.confirm("Are you sure you want to permanently delete this employee?")) return;
     await runAction(async () => {
@@ -398,7 +397,6 @@ function Employees({ api, employees, refresh, runAction }) {
                   employee.workEmail,
                   [employee.department, employee.designation].filter(Boolean).join(" / ") || "-",
                   <Badge value={employee.status} />,
-                  // Display action buttons grouped together side-by-side cleanly
                   <div className="flex flex-wrap gap-1.5" key={employee.id}>
                     <button className="btn btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => offboard(employee.id)}>Offboard</button>
                     <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-semibold" onClick={() => removeEmployee(employee.id)}>Delete</button>
@@ -439,23 +437,20 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
   const [employeeId, setEmployeeId] = useState(selectedEmployee);
   const [leave, setLeave] = useState({ leaveType: "ANNUAL", startDate: today, endDate: today, reason: "" });
   const [balances, setBalances] = useState([]);
-  const [pendingLeaves, setPendingLeaves] = useState([]); // 🌟 ADDED: Local context queue for pending leave lists
+  const [pendingLeaves, setPendingLeaves] = useState([]);
 
   useEffect(() => {
     setEmployeeId(selectedEmployee);
   }, [selectedEmployee]);
 
-  // 🌟 ADDED: Dynamic tracking mechanism for managers to load organization leave rows
   async function loadPendingLeaves() {
     if (userContext?.isEmployee) return;
     await runAction(async () => {
       const response = await api.get(`/api/v1/attendance/dashboard?date=${today}`);
-      // Fallback extraction to map custom list matrices inside data layout buckets smoothly
       setPendingLeaves(response?.rawRequests || response?.pendingRequests || []);
     });
   }
 
-  // 🌟 ADDED: Decision action terminal handler (APPROVE / REJECT)
   async function handleDecision(leaveId, statusString) {
     await runAction(async () => {
       await api.post(`/api/v1/attendance/leave-requests/${leaveId}/decision`, {
@@ -489,12 +484,12 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     });
   }
 
-  // 🌟 ADDED: Proactive layout lifecycle listener for administration layer components
+  // 🌟 FIXED: Removed 'token' reference from this lifecycle listener to prevent render context crashes
   useEffect(() => {
-    if (!userContext?.isEmployee && token) {
+    if (!userContext?.isEmployee) {
       loadPendingLeaves();
     }
-  }, [userContext, token]);
+  }, [userContext]);
 
   return (
       <Page title="Attendance Tracker" subtitle="Punch simulation logging tracks directly into the database layers.">
@@ -526,7 +521,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
           </Panel>
         </div>
 
-        {/* 🌟 ADDED: Admin Evaluation Dashboard Task Control Grid */}
         {!userContext?.isEmployee && (
             <Panel title="Pending Leave Approvals Task Queue" action={<button className="btn btn-secondary" onClick={loadPendingLeaves}>Refresh Queue</button>}>
               {pendingLeaves.length ? (
@@ -671,7 +665,6 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
     });
   }
 
-  // Automate fetching context metrics for individual views
   useEffect(() => {
     if (employeeId && userContext?.isEmployee) {
       loadPerformance();
