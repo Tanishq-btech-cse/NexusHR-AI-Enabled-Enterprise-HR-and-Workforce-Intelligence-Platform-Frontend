@@ -142,7 +142,7 @@ function App() {
     });
   }
 
-  // 🌟 FIXED: Added security guard clause to stop unauthorized 403 network calls from employee roles
+  // FIXED: Added security guard clause to stop unauthorized 403 network calls from employee roles
   async function refreshAttendanceDashboard() {
     if (!token) return;
     if (userContext?.isEmployee) return;
@@ -377,19 +377,32 @@ function Employees({ api, employees, refresh, runAction }) {
     }, "Offboarding started");
   }
 
+  // 🌟 ADDED: Delete capability handler to clear data paths securely
+  async function removeEmployee(id) {
+    if (!window.confirm("Are you sure you want to permanently delete this employee?")) return;
+    await runAction(async () => {
+      await api.request("DELETE", `/api/v1/employees/${id}`);
+      await refresh();
+    }, "Employee records permanently removed");
+  }
+
   return (
-      <Page title="Employees" subtitle="Create employees, assign departments, and start offboarding workflows.">
+      <Page title="Employees" subtitle="Create employees, assign departments, and manage global workforce configurations.">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
           <Panel title="Employee directory">
             <DataTable
-                columns={["Code", "Name", "Email", "Team", "Status", "Action"]}
+                columns={["Code", "Name", "Email", "Team", "Status", "Actions"]}
                 rows={employees.map((employee) => [
                   employee.employeeCode,
                   `${employee.firstName} ${employee.lastName}`,
                   employee.workEmail,
                   [employee.department, employee.designation].filter(Boolean).join(" / ") || "-",
                   <Badge value={employee.status} />,
-                  <button className="btn btn-secondary min-h-8 px-3 py-1" onClick={() => offboard(employee.id)}>Offboard</button>
+                  // 🌟 UPDATED: Display action buttons grouped together side-by-side cleanly
+                  <div className="flex flex-wrap gap-1.5">
+                    <button className="btn btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => offboard(employee.id)}>Offboard</button>
+                    <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-semibold" onClick={() => removeEmployee(employee.id)}>Delete</button>
+                  </div>
                 ])}
             />
           </Panel>
@@ -772,7 +785,9 @@ function createApi(token) {
   return {
     get: (path) => request("GET", path),
     post: (path, body) => request("POST", path, body),
-    put: (path, body) => request("PUT", path, body)
+    put: (path, body) => request("PUT", path, body),
+    // 🌟 ADDED: Fallback method signature to securely support arbitrary DELETE operations
+    request: (method, path, body) => request(method, path, body)
   };
 }
 
