@@ -5,12 +5,12 @@ const TOKEN_KEY = "nexushr_access_token";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", mark: "D" },
-  { id: "employees", label: "Employees", mark: "E", adminOnly: true },
+  { id: "employees", label: "Employees", mark: "E", executiveOnly: true },
   { id: "attendance", label: "Attendance", mark: "A" },
-  { id: "payroll", label: "Payroll", mark: "P" }, // Left available for employees to view personal slips
+  { id: "payroll", label: "Payroll", mark: "P" },
   { id: "performance", label: "Performance", mark: "R" },
-  { id: "insights", label: "Insights", mark: "I", adminOnly: true },
-  { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
+  { id: "insights", label: "Insights", mark: "I", managementOnly: true },
+  { id: "notifications", label: "Notifications", mark: "N", executiveOnly: true }
 ];
 
 const defaultEmployee = {
@@ -53,28 +53,43 @@ function App() {
   const [attendanceMetrics, setAttendanceMetrics] = useState(null);
   const [insights, setInsights] = useState([]);
 
-  // Extracted user context profile states
+  // Extracted user context profile states with proper RBAC
   const userContext = useMemo(() => {
     if (!token) return null;
     const payload = parseJwt(token);
     if (!payload) return null;
 
-    // Normalize role string checks coming from our backend config format
     const parsedRoles = payload.roles || [];
-    const isEmployee = parsedRoles.includes("EMPLOYEE") || parsedRoles.includes("ROLE_EMPLOYEE");
-    const isAdmin = parsedRoles.includes("ADMIN") || parsedRoles.includes("ROLE_ADMIN") || parsedRoles.includes("HR");
+
+    // Helper function for checking roles
+    const hasRole = (role) => parsedRoles.includes(role) || parsedRoles.includes(`ROLE_${role}`);
+
+    const isAdmin = hasRole("ADMIN");
+    const isHr = hasRole("HR");
+    const isManager = hasRole("MANAGER");
+    const isEmployee = hasRole("EMPLOYEE") || (!isAdmin && !isHr && !isManager);
+
+    // Grouping for easier UI rendering logic
+    const isExecutive = isAdmin || isHr; // Has write access to HR/Admin features
+    const isManagement = isAdmin || isHr || isManager; // Has read access to team/global features
 
     return {
       email: payload.sub,
       roles: parsedRoles,
-      isEmployee: isEmployee && !isAdmin, // Explicit flag mapping
+      isAdmin,
+      isHr,
+      isManager,
+      isEmployee,
+      isExecutive,
+      isManagement,
+      hasRole
     };
   }, [token]);
 
   // Determine current employee identity reference tracking safely
   const currentEmployeeId = useMemo(() => {
     if (!userContext || employees.length === 0) return "";
-    if (userContext.isEmployee) {
+    if (!userContext.isManagement) {
       const match = employees.find(e => e.workEmail?.toLowerCase() === userContext.email?.toLowerCase());
       return match ? match.id : "";
     }
@@ -85,10 +100,12 @@ function App() {
 
   // Filter sidebar navigational nodes dynamically depending on credentials status
   const visibleNavItems = useMemo(() => {
-    if (userContext?.isEmployee) {
-      return navItems.filter(item => !item.adminOnly);
-    }
-    return navItems;
+    if (!userContext) return [];
+    return navItems.filter(item => {
+      if (item.executiveOnly && !userContext.isExecutive) return false;
+      if (item.managementOnly && !userContext.isManagement) return false;
+      return true;
+    });
   }, [userContext]);
 
   function handleToken(nextToken) {
@@ -120,11 +137,10 @@ function App() {
     }
   }
 
-  // Employees safely request personal target index to resolve tracking terminal context IDs
   async function refreshBaseData() {
     if (!token) return;
     await runAction(async () => {
-      if (userContext?.isEmployee) {
+      if (!userContext?.isManagement) {
         const [nextMetrics, myProfile] = await Promise.all([
           api.get("/api/v1/dashboard/metrics"),
           api.get("/api/v1/employees/me")
@@ -142,10 +158,9 @@ function App() {
     });
   }
 
-  // FIXED: Added security guard clause to stop unauthorized 403 network calls from employee roles
   async function refreshAttendanceDashboard() {
     if (!token) return;
-    if (userContext?.isEmployee) return;
+    if (!userContext?.isManagement) return;
 
     await runAction(async () => {
       setAttendanceMetrics(await api.get(`/api/v1/attendance/dashboard?date=${today}`));
@@ -154,7 +169,7 @@ function App() {
 
   async function refreshInsights() {
     if (!token) return;
-    if (userContext?.isEmployee) return; // Prevent unauthorized background noise calls
+    if (!userContext?.isManagement) return;
     await runAction(async () => {
       setInsights(await api.get("/api/v1/insights/organization"));
     });
@@ -162,7 +177,7 @@ function App() {
 
   useEffect(() => {
     refreshBaseData();
-  }, [token, userContext]); // Track user context profile changes across sessions
+  }, [token, userContext]);
 
   if (!token) {
     return <LoginScreen onLogin={handleToken} />;
@@ -176,7 +191,7 @@ function App() {
             <h1 className="mt-1 text-2xl font-bold text-ink">Workforce Console</h1>
             {userContext && (
                 <div className="mt-2 rounded bg-panel px-2 py-1 text-xs font-medium text-brand">
-                  Role: {userContext.isEmployee ? "Employee Only" : "Management / Admin"}
+                  Role: {(userContext.roles || []).join(", ") || "EMPLOYEE"}
                 </div>
             )}
           </div>
@@ -220,12 +235,12 @@ function App() {
 
           <main>
             {active === "dashboard" && <Dashboard metrics={metrics} attendanceMetrics={attendanceMetrics} onLoadAttendance={refreshAttendanceDashboard} userContext={userContext} />}
-            {active === "employees" && !userContext?.isEmployee && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} />}
+            {active === "employees" && userContext?.isExecutive && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} />}
             {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
             {active === "payroll" && <Payroll api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
             {active === "performance" && <Performance api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
-            {active === "insights" && !userContext?.isEmployee && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
-            {active === "notifications" && !userContext?.isEmployee && <Notifications api={api} runAction={runAction} />}
+            {active === "insights" && userContext?.isManagement && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
+            {active === "notifications" && userContext?.isExecutive && <Notifications api={api} runAction={runAction} />}
           </main>
         </div>
       </div>
@@ -234,7 +249,7 @@ function App() {
 
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("admin@nexushr.local");
-  const [password, setPassword] = useState("ChangeMe123!");
+  const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -295,11 +310,11 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
   ];
 
   return (
-      <Page title={userContext?.isEmployee ? "My Employee Dashboard" : "Executive Dashboard"} subtitle={userContext?.isEmployee ? "Personal workforce track summaries." : "Global executive oversight matrix indicators."}>
+      <Page title={!userContext?.isManagement ? "My Employee Dashboard" : "Executive Dashboard"} subtitle={!userContext?.isManagement ? "Personal workforce track summaries." : "Global oversight matrix indicators."}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {items.map(([label, value]) => <Stat key={label} label={label} value={value ?? "-"} />)}
         </div>
-        {!userContext?.isEmployee && (
+        {userContext?.isManagement && (
             <Panel title="Attendance today" action={<button className="btn btn-secondary" onClick={onLoadAttendance}>Load</button>}>
               {attendanceMetrics ? (
                   <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
@@ -368,19 +383,20 @@ function Employees({ api, employees, refresh, runAction }) {
       });
       setRole({ employeeId: "", department: "", designation: "", managerId: "" });
       await refresh();
-    }, "Role updated");
+    }, "Operational role updated");
   }
 
   async function assignSecurityRole(event) {
     event.preventDefault();
     if (!securityRole.employeeId) return;
+
     await runAction(async () => {
       await api.put(`/api/v1/employees/${securityRole.employeeId}/security-role`, {
         role: securityRole.role
       });
-      setSecurityRole({ employeeId: "", role: "EMPLOYEE" });
       await refresh();
-    }, `System clearance level successfully shifted to ${securityRole.role}`);
+      setSecurityRole({ employeeId: "", role: "EMPLOYEE" });
+    }, "Security role updated");
   }
 
   async function offboard(id) {
@@ -403,11 +419,12 @@ function Employees({ api, employees, refresh, runAction }) {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
           <Panel title="Employee directory">
             <DataTable
-                columns={["Code", "Name", "Email", "Team", "Status", "Actions"]}
+                columns={["Code", "Name", "Email", "Role", "Team", "Status", "Actions"]}
                 rows={employees.map((employee) => [
                   employee.employeeCode,
                   `${employee.firstName} ${employee.lastName}`,
                   employee.workEmail,
+                  (employee.roles || []).join(", ") || "-",
                   [employee.department, employee.designation].filter(Boolean).join(" / ") || "-",
                   <Badge value={employee.status} />,
                   <div className="flex flex-wrap gap-1.5" key={employee.id}>
@@ -431,6 +448,7 @@ function Employees({ api, employees, refresh, runAction }) {
                 <button className="btn btn-primary sm:col-span-2">Create employee</button>
               </form>
             </Panel>
+
             <Panel title="Assign operational role">
               <form className="grid gap-3" onSubmit={assignRole}>
                 <EmployeeSelect employees={employees} value={role.employeeId} onChange={(employeeId) => setRole({ ...role, employeeId })} />
@@ -440,18 +458,24 @@ function Employees({ api, employees, refresh, runAction }) {
                 <button className="btn btn-primary">Update role</button>
               </form>
             </Panel>
-            <Panel title="Assign security platform authorization">
+
+            <Panel title="Assign Security Role">
               <form className="grid gap-3" onSubmit={assignSecurityRole}>
-                <EmployeeSelect employees={employees} value={securityRole.employeeId} onChange={(employeeId) => setSecurityRole({ ...securityRole, employeeId })} />
+                <EmployeeSelect
+                    employees={employees}
+                    value={securityRole.employeeId}
+                    onChange={(employeeId) => setSecurityRole({ ...securityRole, employeeId })}
+                />
                 <Select
-                    label="System permission tier clearance"
+                    label="Role"
                     value={securityRole.role}
                     onChange={(role) => setSecurityRole({ ...securityRole, role })}
-                    options={["EMPLOYEE", "MANAGER", "HR", "ADMIN"]}
+                    options={["EMPLOYEE", "MANAGER", "HR", "PAYROLL", "AUDITOR", "ADMIN"]}
                 />
-                <button className="btn btn-primary">Commit permission shift</button>
+                <button className="btn btn-primary">Update Security Role</button>
               </form>
             </Panel>
+
           </div>
         </div>
       </Page>
@@ -469,10 +493,10 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
   }, [selectedEmployee]);
 
   async function loadPendingLeaves() {
-    if (userContext?.isEmployee) return;
+    if (!userContext?.isManagement) return;
     await runAction(async () => {
       const response = await api.get(`/api/v1/attendance/dashboard?date=${today}`);
-      setPendingLeaves(response?.pendingRequests || response?.rawRequests || []);
+      setPendingLeaves(response?.rawRequests || response?.pendingRequests || []);
     });
   }
 
@@ -499,7 +523,7 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     await runAction(async () => {
       await api.post("/api/v1/attendance/leave-requests", { employeeId, ...leave });
       setLeave({ leaveType: "ANNUAL", startDate: today, endDate: today, reason: "" });
-      if (!userContext?.isEmployee) await loadPendingLeaves();
+      if (userContext?.isManagement) await loadPendingLeaves();
     }, "Leave request submitted");
   }
 
@@ -510,7 +534,7 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
   }
 
   useEffect(() => {
-    if (!userContext?.isEmployee) {
+    if (userContext?.isManagement) {
       loadPendingLeaves();
     }
   }, [userContext]);
@@ -520,7 +544,7 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
         <div className="grid gap-4 xl:grid-cols-2">
           <Panel title="Clock Execution Terminal">
             <div className="grid gap-3">
-              {!userContext?.isEmployee ? (
+              {userContext?.isManagement ? (
                   <EmployeeSelect employees={employees} value={employeeId} onChange={setEmployeeId} />
               ) : (
                   <div className="text-sm font-medium p-2 border border-line bg-panel rounded">
@@ -545,7 +569,7 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
           </Panel>
         </div>
 
-        {!userContext?.isEmployee && (
+        {userContext?.isManagement && (
             <Panel title="Pending Leave Approvals Task Queue" action={<button className="btn btn-secondary" onClick={loadPendingLeaves}>Refresh Queue</button>}>
               {pendingLeaves.length ? (
                   <DataTable
@@ -568,23 +592,7 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
         )}
 
         <Panel title="Leave balances status tracker">
-          {balances.length ? (
-              <DataTable
-                  columns={["Type", "Entitled", "Used", "Available"]}
-                  rows={balances.map((item) => {
-                    const entitled = Number(item.openingBalance || 0);
-                    const used = Number(item.consumed || 0);
-                    const available = entitled - used;
-
-                    return [
-                      item.leaveType,
-                      entitled,
-                      used,
-                      available
-                    ];
-                  })}
-              />
-          ) : <Empty text="No data streams parsed." />}
+          {balances.length ? <DataTable columns={["Type", "Entitled", "Used", "Available"]} rows={balances.map((item) => [item.leaveType, item.openingBalance, item.consumed, item.availableDays || item.openingBalance])} /> : <Empty text="No data streams parsed." />}
         </Panel>
       </Page>
   );
@@ -616,7 +624,7 @@ function Payroll({ api, selectedEmployee, runAction, userContext }) {
 
   async function loadPayslips() {
     await runAction(async () => {
-      const path = (!userContext?.isEmployee && payrollRun?.id)
+      const path = (userContext?.isExecutive && payrollRun?.id)
           ? `/api/v1/payroll/runs/${payrollRun.id}/payslips`
           : `/api/v1/payroll/employees/${employeeId}/payslips`;
       setPayslips(await api.get(path));
@@ -625,8 +633,8 @@ function Payroll({ api, selectedEmployee, runAction, userContext }) {
 
   return (
       <Page title="Compensation Matrix" subtitle="View issued statements or perform background calculations.">
-        <div className={`grid gap-4 ${userContext?.isEmployee ? "grid-cols-1" : "xl:grid-cols-[360px_minmax(0,1fr)]"}`}>
-          {!userContext?.isEmployee && (
+        <div className={`grid gap-4 ${!userContext?.isExecutive ? "grid-cols-1" : "xl:grid-cols-[360px_minmax(0,1fr)]"}`}>
+          {userContext?.isExecutive && (
               <Panel title="Run payroll calculations">
                 <form className="grid gap-3" onSubmit={calculate}>
                   <Input label="Year" type="number" value={run.year} onChange={(year) => setRun({ ...run, year })} required />
@@ -647,7 +655,7 @@ function Payroll({ api, selectedEmployee, runAction, userContext }) {
           )}
           <Panel title="Personal Payslips Directory">
             <div className="mb-3 flex gap-3 items-end">
-              {userContext?.isEmployee ? (
+              {!userContext?.isExecutive ? (
                   <div className="text-sm font-medium p-2 border border-line bg-panel rounded w-full">
                     Active verification token target: <span className="font-mono text-xs text-brand">{employeeId}</span>
                   </div>
@@ -706,14 +714,14 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
   }
 
   useEffect(() => {
-    if (employeeId && userContext?.isEmployee) {
+    if (employeeId && !userContext?.isManagement) {
       loadPerformance();
     }
   }, [employeeId]);
 
   return (
       <Page title="Performance Hub" subtitle="Track milestone tracking configurations inside security containers.">
-        {!userContext?.isEmployee && (
+        {userContext?.isManagement && (
             <Panel title="Employee context matching">
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <Input label="Employee target tracker ID" value={employeeId} onChange={setEmployeeId} />
@@ -733,7 +741,7 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
             </form>
           </Panel>
 
-          {!userContext?.isEmployee && (
+          {userContext?.isManagement && (
               <Panel title="Create performance evaluation metrics matrix">
                 <form className="grid gap-3 sm:grid-cols-2" onSubmit={createReview}>
                   <Input label="Cycle" value={review.cycle} onChange={(cycle) => setReview({ ...review, cycle })} required />
