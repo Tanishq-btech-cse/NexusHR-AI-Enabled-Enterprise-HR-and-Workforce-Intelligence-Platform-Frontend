@@ -120,16 +120,23 @@ function App() {
     }
   }
 
+  // 🌟 FIXED: Conditionally handle roles to protect unauthorized API calls from throwing a 403
   async function refreshBaseData() {
     if (!token) return;
     await runAction(async () => {
-      // Employees call is needed for matching email to target ID profile structure
-      const [nextMetrics, nextEmployees] = await Promise.all([
-        api.get("/api/v1/dashboard/metrics"),
-        api.get("/api/v1/employees")
-      ]);
-      setMetrics(nextMetrics);
-      setEmployees(nextEmployees);
+      if (userContext?.isEmployee) {
+        // Employees only pull authorized public dashboard metrics indicators
+        const nextMetrics = await api.get("/api/v1/dashboard/metrics");
+        setMetrics(nextMetrics);
+      } else {
+        // Management accounts pull the directory payload concurrently
+        const [nextMetrics, nextEmployees] = await Promise.all([
+          api.get("/api/v1/dashboard/metrics"),
+          api.get("/api/v1/employees")
+        ]);
+        setMetrics(nextMetrics);
+        setEmployees(nextEmployees);
+      }
     });
   }
 
@@ -150,7 +157,7 @@ function App() {
 
   useEffect(() => {
     refreshBaseData();
-  }, [token]);
+  }, [token, userContext]); // Track user context profile changes across sessions
 
   if (!token) {
     return <LoginScreen onLogin={handleToken} />;
@@ -231,7 +238,6 @@ function LoginScreen({ onLogin }) {
     setBusy(true);
     setError("");
     try {
-      // 🌟 FIXED: Appended '/api/v1' path configuration layout mapping
       const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -604,7 +610,7 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
                 <form className="grid gap-3 sm:grid-cols-2" onSubmit={createReview}>
                   <Input label="Cycle" value={review.cycle} onChange={(cycle) => setReview({ ...review, cycle })} required />
                   <Input label="Manager rating" type="number" min="1" max="5" step="0.1" value={review.managerRating} onChange={(managerRating) => setReview({ ...review, managerRating })} required />
-                  <Input label="Peer rating" type="number" min="1" max="5" step="0.1" value={review.peerRating} onChange={(peerRating) => setReview({ ...peerRating, peerRating })} required />
+                  <Input label="Peer rating" type="number" min="1" max="5" step="0.1" value={review.peerRating} onChange={(peerRating) => setReview({ ...review, peerRating })} required />
                   <Input label="Self rating" type="number" min="1" max="5" step="0.1" value={review.selfRating} onChange={(selfRating) => setReview({ ...review, selfRating })} required />
                   <Field label="Feedback">
                     <textarea className="field min-h-24" value={review.feedback} onChange={(event) => setReview({ ...review, feedback: event.target.value })} />
@@ -792,7 +798,6 @@ function InsightCard({ insight }) { return ( <div className="rounded-lg border b
 
 function createApi(token) {
   async function request(method, path, body) {
-    // 🌟 FIXED: Preserved the full path mapping context directly rather than stripping out the required cloud versioning parameters
     const absolutePath = `${API_BASE_URL}${path}`;
     const response = await fetch(absolutePath, {
       method,
