@@ -725,7 +725,6 @@ function Page({ title, subtitle, children }) {
   );
 }
 
-// ... Keep standard layout utilities exactly as they are below
 function Panel({ title, action, children }) { return ( <section className="rounded-lg border border-line bg-white shadow-sm"> <div className="flex min-h-14 items-center justify-between gap-3 border-b border-line px-4 py-3"> <h3 className="text-base font-bold text-ink">{title}</h3> {action} </div> <div className="p-4">{children}</div> </section> ); }
 function Stat({ label, value }) { return ( <div className="rounded-lg border border-line bg-white p-4 shadow-sm"> <p className="text-sm font-medium text-muted">{label}</p> <p className="mt-2 text-3xl font-bold text-ink">{value}</p> </div> ); }
 function DataTable({ columns, rows }) { if (!rows.length) return <Empty text="No records found." />; return ( <div className="overflow-x-auto"> <table className="min-w-full border-separate border-spacing-0 text-left text-sm"> <thead> <tr> {columns.map((column) => ( <th key={column} className="border-b border-line bg-panel px-3 py-2 text-xs font-semibold uppercase text-muted">{column}</th> ))} </tr> </thead> <tbody> {rows.map((row, rowIndex) => ( <tr key={rowIndex}> {row.map((cell, cellIndex) => ( <td key={cellIndex} className="border-b border-line px-3 py-3 align-top text-ink">{cell}</td> ))} </tr> ))} </tbody> </table> </div> ); }
@@ -733,7 +732,6 @@ function Field({ label, children }) { return ( <label className="block"> <span c
 function Input({ label, value, onChange, type = "text", ...props }) { return ( <Field label={label}> <input className="field" type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} {...props} /> </Field> ); }
 function Select({ label, value, onChange, options }) { return ( <Field label={label}> <select className="field" value={value} onChange={(event) => onChange(event.target.value)}> {options.map((option) => <option key={option} value={option}>{option}</option>)} </select> </Field> ); }
 
-// 🌟 FIXED: Re-added the missing closing bracket to the first placeholder option tag element
 function EmployeeSelect({ employees, value, onChange }) {
   return (
       <Field label="Employee">
@@ -785,8 +783,14 @@ async function parseResponse(response) {
   return data;
 }
 
-// Additional helper definitions keep functional context exactly intact
 function shortId(value) { return value ? `${value.slice(0, 8)}...` : "-"; }
-// Financial calculations transformer
 function money(value) { const number = Number(value || 0); return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(number); }
+
+// 🌟 RESTORED UTILITY: Helper function to accurately represent metric percentages
+function formatPercent(value) {
+  if (value === undefined || value === null || value === "-") return "-";
+  const number = Number(value);
+  return `${Math.round(number)}%`;
+}
+
 export default App;
