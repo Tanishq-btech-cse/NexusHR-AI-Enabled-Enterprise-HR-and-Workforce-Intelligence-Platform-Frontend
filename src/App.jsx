@@ -733,7 +733,7 @@ function Field({ label, children }) { return ( <label className="block"> <span c
 function Input({ label, value, onChange, type = "text", ...props }) { return ( <Field label={label}> <input className="field" type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} {...props} /> </Field> ); }
 function Select({ label, value, onChange, options }) { return ( <Field label={label}> <select className="field" value={value} onChange={(event) => onChange(event.target.value)}> {options.map((option) => <option key={option} value={option}>{option}</option>)} </select> </Field> ); }
 
-// 🌟 FIXED: Added missing closing bracket to option node element
+// 🌟 FIXED: Re-added the missing closing bracket to the first placeholder option tag element
 function EmployeeSelect({ employees, value, onChange }) {
   return (
       <Field label="Employee">
@@ -785,8 +785,8 @@ async function parseResponse(response) {
   return data;
 }
 
-// ... Additional helper definitions keep functional context exactly intact
+// Additional helper definitions keep functional context exactly intact
 function shortId(value) { return value ? `${value.slice(0, 8)}...` : "-"; }
-// ... Financial calculations transformer
+// Financial calculations transformer
 function money(value) { const number = Number(value || 0); return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(number); }
 export default App;
