@@ -120,16 +120,18 @@ function App() {
     }
   }
 
-  // Conditionally handle roles to protect unauthorized API calls from throwing a 403
+  // 🌟 FIXED: Employees safely request personal target index to resolve tracking terminal context IDs
   async function refreshBaseData() {
     if (!token) return;
     await runAction(async () => {
       if (userContext?.isEmployee) {
-        // Employees only pull authorized public dashboard metrics indicators
-        const nextMetrics = await api.get("/api/v1/dashboard/metrics");
+        const [nextMetrics, myProfile] = await Promise.all([
+          api.get("/api/v1/dashboard/metrics"),
+          api.get("/api/v1/employees/me")
+        ]);
         setMetrics(nextMetrics);
+        setEmployees(myProfile ? [myProfile] : []);
       } else {
-        // Management accounts pull the directory payload concurrently
         const [nextMetrics, nextEmployees] = await Promise.all([
           api.get("/api/v1/dashboard/metrics"),
           api.get("/api/v1/employees")
@@ -270,7 +272,6 @@ function LoginScreen({ onLogin }) {
             <p className="font-semibold text-ink">System Login Verification Nodes:</p>
             <p>👑 Admin: <code className="text-brand">admin@nexushr.local</code> / <code className="text-brand">admin123</code></p>
             <p>💼 Employee: <code className="text-brand">employee@nexushr.local</code> / <code className="text-brand">password123</code></p>
-            {/* 🌟 ADDED: Dynamic notification text for new corporate additions */}
             <p className="mt-1 pt-1 border-t border-line text-gold font-medium">✨ Newly added team members can sign in with their unique work email and the default system string: <code className="text-brand">password123</code></p>
           </div>
           {error ? <p className="mt-4 rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
@@ -325,7 +326,6 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
   );
 }
 
-// ... Rest of the file stays exactly as you provided it below Dashboard
 function Employees({ api, employees, refresh, runAction }) {
   const [form, setForm] = useState(defaultEmployee);
   const [role, setRole] = useState({ employeeId: "", department: "", designation: "", managerId: "" });
@@ -737,85 +737,13 @@ function Panel({ title, action, children }) {
   );
 }
 
-function Stat({ label, value }) {
-  return (
-      <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
-        <p className="text-sm font-medium text-muted">{label}</p>
-        <p className="mt-2 text-3xl font-bold text-ink">{value}</p>
-      </div>
-  );
-}
-
-function DataTable({ columns, rows }) {
-  if (!rows.length) return <Empty text="No records found." />;
-  return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
-          <thead>
-          <tr>
-            {columns.map((column) => (
-                <th key={column} className="border-b border-line bg-panel px-3 py-2 text-xs font-semibold uppercase text-muted">{column}</th>
-            ))}
-          </tr>
-          </thead>
-          <tbody>
-          {rows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {row.map((cell, cellIndex) => (
-                    <td key={cellIndex} className="border-b border-line px-3 py-3 align-top text-ink">{cell}</td>
-                ))}
-              </tr>
-          ))}
-          </tbody>
-        </table>
-      </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-      <label className="block">
-        <span className="label mb-1 block">{label}</span>
-        {children}
-      </label>
-  );
-}
-
-function Input({ label, value, onChange, type = "text", ...props }) {
-  return (
-      <Field label={label}>
-        <input className="field" type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} {...props} />
-      </Field>
-  );
-}
-
-// Fixed dropdown values parsing to use correct string mappings
-function Select({ label, value, onChange, options }) {
-  return (
-      <Field label={label}>
-        <select className="field" value={value} onChange={(event) => onChange(event.target.value)}>
-               {options.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
-      </Field>
-  );
-}
-
-// ... Rest of file stays exactly as you provided
-function EmployeeSelect({ employees, value, onChange }) {
-  return (
-      <Field label="Employee">
-        <select className="field" value={value || ""} onChange={(event) => onChange(event.target.value)} required>
-          <option value="">Choose employee</option>
-          {employees.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.employeeCode} - {employee.firstName} {employee.lastName}
-              </option>
-          ))}
-        </select>
-      </Field>
-  );
-}
-
+// ... Keep standard layout utilities exactly as they are below
+function Stat({ label, value }) { return ( <div className="rounded-lg border border-line bg-white p-4 shadow-sm"> <p className="text-sm font-medium text-muted">{label}</p> <p className="mt-2 text-3xl font-bold text-ink">{value}</p> </div> ); }
+function DataTable({ columns, rows }) { if (!rows.length) return <Empty text="No records found." />; return ( <div className="overflow-x-auto"> <table className="min-w-full border-separate border-spacing-0 text-left text-sm"> <thead> <tr> {columns.map((column) => ( <th key={column} className="border-b border-line bg-panel px-3 py-2 text-xs font-semibold uppercase text-muted">{column}</th> ))} </tr> </thead> <tbody> {rows.map((row, rowIndex) => ( <tr key={rowIndex}> {row.map((cell, cellIndex) => ( <td key={cellIndex} className="border-b border-line px-3 py-3 align-top text-ink">{cell}</td> ))} </tr> ))} </tbody> </table> </div> ); }
+function Field({ label, children }) { return ( <label className="block"> <span className="label mb-1 block">{label}</span> {children} </label> ); }
+function Input({ label, value, onChange, type = "text", ...props }) { return ( <Field label={label}> <input className="field" type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} {...props} /> </Field> ); }
+function Select({ label, value, onChange, options }) { return ( <Field label={label}> <select className="field" value={value} onChange={(event) => onChange(event.target.value)}> {options.map((option) => <option key={option} value={option}>{option}</option>)} </select> </Field> ); }
+function EmployeeSelect({ employees, value, onChange }) { return ( <Field label="Employee"> <select className="field" value={value || ""} onChange={(event) => onChange(event.target.value)} required> <option value="">Choose employee</option {employees.map((employee) => ( <option key={employee.id} value={employee.id}> {employee.employeeCode} - {employee.firstName} {employee.lastName} </option> ))} </select> </Field> ); }
 function Badge({ value }) { return <span className="inline-flex rounded-md bg-brand/10 px-2 py-1 text-xs font-semibold text-brand">{value || "-"}</span>; }
 function Empty({ text }) { return <p className="rounded-md border border-dashed border-line bg-panel px-4 py-6 text-center text-sm text-muted">{text}</p>; }
 function JsonBlock({ data }) { return <pre className="max-h-96 overflow-auto rounded-md bg-ink p-4 text-xs text-white">{JSON.stringify(data, null, 2)}</pre>; }
