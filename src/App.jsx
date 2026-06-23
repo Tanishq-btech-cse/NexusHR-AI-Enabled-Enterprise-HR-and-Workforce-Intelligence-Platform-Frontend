@@ -332,6 +332,7 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
 function Employees({ api, employees, refresh, runAction }) {
   const [form, setForm] = useState(defaultEmployee);
   const [role, setRole] = useState({ employeeId: "", department: "", designation: "", managerId: "" });
+  const [securityRole, setSecurityRole] = useState({ employeeId: "", role: "EMPLOYEE" });
 
   async function createEmployee(event) {
     event.preventDefault();
@@ -368,6 +369,18 @@ function Employees({ api, employees, refresh, runAction }) {
       setRole({ employeeId: "", department: "", designation: "", managerId: "" });
       await refresh();
     }, "Role updated");
+  }
+
+  async function assignSecurityRole(event) {
+    event.preventDefault();
+    if (!securityRole.employeeId) return;
+    await runAction(async () => {
+      await api.put(`/api/v1/employees/${securityRole.employeeId}/security-role`, {
+        role: securityRole.role
+      });
+      setSecurityRole({ employeeId: "", role: "EMPLOYEE" });
+      await refresh();
+    }, `System clearance level successfully shifted to ${securityRole.role}`);
   }
 
   async function offboard(id) {
@@ -418,13 +431,25 @@ function Employees({ api, employees, refresh, runAction }) {
                 <button className="btn btn-primary sm:col-span-2">Create employee</button>
               </form>
             </Panel>
-            <Panel title="Assign role">
+            <Panel title="Assign operational role">
               <form className="grid gap-3" onSubmit={assignRole}>
                 <EmployeeSelect employees={employees} value={role.employeeId} onChange={(employeeId) => setRole({ ...role, employeeId })} />
                 <Input label="Department" value={role.department} onChange={(department) => setRole({ ...role, department })} required />
                 <Input label="Designation" value={role.designation} onChange={(designation) => setRole({ ...role, designation })} required />
                 <Input label="Manager ID" value={role.managerId} onChange={(managerId) => setRole({ ...role, managerId })} />
                 <button className="btn btn-primary">Update role</button>
+              </form>
+            </Panel>
+            <Panel title="Assign security platform authorization">
+              <form className="grid gap-3" onSubmit={assignSecurityRole}>
+                <EmployeeSelect employees={employees} value={securityRole.employeeId} onChange={(employeeId) => setSecurityRole({ ...securityRole, employeeId })} />
+                <Select
+                    label="System permission tier clearance"
+                    value={securityRole.role}
+                    onChange={(role) => setSecurityRole({ ...securityRole, role })}
+                    options={["EMPLOYEE", "MANAGER", "HR", "ADMIN"]}
+                />
+                <button className="btn btn-primary">Commit permission shift</button>
               </form>
             </Panel>
           </div>
@@ -447,7 +472,7 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     if (userContext?.isEmployee) return;
     await runAction(async () => {
       const response = await api.get(`/api/v1/attendance/dashboard?date=${today}`);
-      setPendingLeaves(response?.rawRequests || response?.pendingRequests || []);
+      setPendingLeaves(response?.pendingRequests || response?.rawRequests || []);
     });
   }
 
@@ -484,7 +509,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     });
   }
 
-  // 🌟 FIXED: Removed 'token' reference from this lifecycle listener to prevent render context crashes
   useEffect(() => {
     if (!userContext?.isEmployee) {
       loadPendingLeaves();
@@ -544,7 +568,23 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
         )}
 
         <Panel title="Leave balances status tracker">
-          {balances.length ? <DataTable columns={["Type", "Entitled", "Used", "Available"]} rows={balances.map((item) => [item.leaveType, item.openingBalance, item.consumed, item.availableDays || item.openingBalance])} /> : <Empty text="No data streams parsed." />}
+          {balances.length ? (
+              <DataTable
+                  columns={["Type", "Entitled", "Used", "Available"]}
+                  rows={balances.map((item) => {
+                    const entitled = Number(item.openingBalance || 0);
+                    const used = Number(item.consumed || 0);
+                    const available = entitled - used;
+
+                    return [
+                      item.leaveType,
+                      entitled,
+                      used,
+                      available
+                    ];
+                  })}
+              />
+          ) : <Empty text="No data streams parsed." />}
         </Panel>
       </Page>
   );
