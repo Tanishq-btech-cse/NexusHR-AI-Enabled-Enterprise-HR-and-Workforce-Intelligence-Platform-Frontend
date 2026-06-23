@@ -278,6 +278,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+// 🌟 FIXED: Replaced raw JsonBlock parsing with a clean summary matrix UI for attendance attributes
 function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }) {
   const items = [
     ["Total employees", metrics?.totalEmployees],
@@ -295,7 +296,28 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
         </div>
         {!userContext?.isEmployee && (
             <Panel title="Attendance today" action={<button className="btn btn-secondary" onClick={onLoadAttendance}>Load</button>}>
-              {attendanceMetrics ? <JsonBlock data={attendanceMetrics} /> : <Empty text="Load today's attendance dashboard." />}
+              {attendanceMetrics ? (
+                  <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                    <div className="rounded-lg border border-line bg-panel p-4 text-center">
+                      <p className="text-xs font-bold uppercase text-muted">Present</p>
+                      <p className="mt-2 text-3xl font-extrabold text-ink">{attendanceMetrics.present ?? 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-line bg-panel p-4 text-center">
+                      <p className="text-xs font-bold uppercase text-muted">Absent</p>
+                      <p className="mt-2 text-3xl font-extrabold text-coral">{attendanceMetrics.absent ?? 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-line bg-panel p-4 text-center">
+                      <p className="text-xs font-bold uppercase text-muted">Remote</p>
+                      <p className="mt-2 text-3xl font-extrabold text-brand">{attendanceMetrics.remote ?? 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-line bg-panel p-4 text-center">
+                      <p className="text-xs font-bold uppercase text-muted">Pending Leaves</p>
+                      <p className="mt-2 text-3xl font-extrabold text-gold">{attendanceMetrics.pendingLeaves ?? 0}</p>
+                    </div>
+                  </div>
+              ) : (
+                  <Empty text="Load today's attendance dashboard." />
+              )}
             </Panel>
         )}
       </Page>
@@ -830,7 +852,6 @@ async function parseResponse(response) {
 function shortId(value) { return value ? `${value.slice(0, 8)}...` : "-"; }
 function money(value) { const number = Number(value || 0); return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(number); }
 
-// 🌟 FIXED: Removed the internal "* 100" modifier to support raw calculated percentage integrations accurately
 function formatPercent(value) {
   if (value === undefined || value === null || value === "-") return "-";
   const number = Number(value);
