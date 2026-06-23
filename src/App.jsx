@@ -5,12 +5,12 @@ const TOKEN_KEY = "nexushr_access_token";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", mark: "D" },
-  { id: "employees", label: "Employees", mark: "E" },
+  { id: "employees", label: "Employees", mark: "E", adminOnly: true },
   { id: "attendance", label: "Attendance", mark: "A" },
-  { id: "payroll", label: "Payroll", mark: "P" },
+  { id: "payroll", label: "Payroll", mark: "P" }, // Left available for employees to view personal slips
   { id: "performance", label: "Performance", mark: "R" },
-  { id: "insights", label: "Insights", mark: "I" },
-  { id: "notifications", label: "Notifications", mark: "N" }
+  { id: "insights", label: "Insights", mark: "I", adminOnly: true },
+  { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
 ];
 
 const defaultEmployee = {
@@ -26,6 +26,23 @@ const defaultEmployee = {
 
 const today = new Date().toISOString().slice(0, 10);
 
+// Helper function to extract user details safely from raw Spring Security JWT
+function parseJwt(token) {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+        atob(base64)
+            .split("")
+            .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+            .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [active, setActive] = useState("dashboard");
@@ -36,8 +53,43 @@ function App() {
   const [attendanceMetrics, setAttendanceMetrics] = useState(null);
   const [insights, setInsights] = useState([]);
 
+  // Extracted user context profile states
+  const userContext = useMemo(() => {
+    if (!token) return null;
+    const payload = parseJwt(token);
+    if (!payload) return null;
+
+    // Normalize role string checks coming from our backend config format
+    const parsedRoles = payload.roles || [];
+    const isEmployee = parsedRoles.includes("EMPLOYEE") || parsedRoles.includes("ROLE_EMPLOYEE");
+    const isAdmin = parsedRoles.includes("ADMIN") || parsedRoles.includes("ROLE_ADMIN") || parsedRoles.includes("HR");
+
+    return {
+      email: payload.sub,
+      roles: parsedRoles,
+      isEmployee: isEmployee && !isAdmin, // Explicit flag mapping
+    };
+  }, [token]);
+
+  // Determine current employee identity reference tracking safely
+  const currentEmployeeId = useMemo(() => {
+    if (!userContext || employees.length === 0) return "";
+    if (userContext.isEmployee) {
+      const match = employees.find(e => e.workEmail?.toLowerCase() === userContext.email?.toLowerCase());
+      return match ? match.id : "";
+    }
+    return employees[0]?.id || "";
+  }, [userContext, employees]);
+
   const api = useMemo(() => createApi(token), [token]);
-  const selectedEmployee = employees[0]?.id || "";
+
+  // Filter sidebar navigational nodes dynamically depending on credentials status
+  const visibleNavItems = useMemo(() => {
+    if (userContext?.isEmployee) {
+      return navItems.filter(item => !item.adminOnly);
+    }
+    return navItems;
+  }, [userContext]);
 
   function handleToken(nextToken) {
     setToken(nextToken);
@@ -50,6 +102,7 @@ function App() {
     setMetrics(null);
     setEmployees([]);
     setInsights([]);
+    setActive("dashboard");
   }
 
   async function runAction(action, successText) {
@@ -70,6 +123,7 @@ function App() {
   async function refreshBaseData() {
     if (!token) return;
     await runAction(async () => {
+      // Employees call is needed for matching email to target ID profile structure
       const [nextMetrics, nextEmployees] = await Promise.all([
         api.get("/api/v1/dashboard/metrics"),
         api.get("/api/v1/employees")
@@ -88,6 +142,7 @@ function App() {
 
   async function refreshInsights() {
     if (!token) return;
+    if (userContext?.isEmployee) return; // Prevent unauthorized background noise calls
     await runAction(async () => {
       setInsights(await api.get("/api/v1/insights/organization"));
     });
@@ -107,9 +162,14 @@ function App() {
           <div className="border-b border-line px-6 py-5">
             <p className="text-xs font-semibold uppercase text-muted">NexusHR</p>
             <h1 className="mt-1 text-2xl font-bold text-ink">Workforce Console</h1>
+            {userContext && (
+                <div className="mt-2 rounded bg-panel px-2 py-1 text-xs font-medium text-brand">
+                  Role: {userContext.isEmployee ? "Employee Only" : "Management / Admin"}
+                </div>
+            )}
           </div>
           <nav className="p-3">
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
                 <button
                     key={item.id}
                     className={`mb-1 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-semibold ${
@@ -130,12 +190,12 @@ function App() {
           <header className="sticky top-0 z-10 border-b border-line bg-white/95 backdrop-blur">
             <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-8">
               <div>
-                <p className="text-xs font-semibold uppercase text-muted">API target</p>
-                <p className="text-sm text-ink">{API_BASE_URL || "Production Server (Relative)"}</p>
+                <p className="text-xs font-semibold uppercase text-muted">Active Session</p>
+                <p className="text-sm font-medium text-ink">{userContext?.email}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <select className="field max-w-52 lg:hidden" value={active} onChange={(event) => setActive(event.target.value)}>
-                  {navItems.map((item) => (
+                  {visibleNavItems.map((item) => (
                       <option key={item.id} value={item.id}>{item.label}</option>
                   ))}
                 </select>
@@ -147,13 +207,13 @@ function App() {
           </header>
 
           <main>
-            {active === "dashboard" && <Dashboard metrics={metrics} attendanceMetrics={attendanceMetrics} onLoadAttendance={refreshAttendanceDashboard} />}
-            {active === "employees" && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} />}
-            {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={selectedEmployee} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} />}
-            {active === "payroll" && <Payroll api={api} selectedEmployee={selectedEmployee} runAction={runAction} />}
-            {active === "performance" && <Performance api={api} selectedEmployee={selectedEmployee} runAction={runAction} />}
-            {active === "insights" && <Insights api={api} insights={insights} selectedEmployee={selectedEmployee} refresh={refreshInsights} runAction={runAction} />}
-            {active === "notifications" && <Notifications api={api} runAction={runAction} />}
+            {active === "dashboard" && <Dashboard metrics={metrics} attendanceMetrics={attendanceMetrics} onLoadAttendance={refreshAttendanceDashboard} userContext={userContext} />}
+            {active === "employees" && !userContext?.isEmployee && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} />}
+            {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
+            {active === "payroll" && <Payroll api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
+            {active === "performance" && <Performance api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
+            {active === "insights" && !userContext?.isEmployee && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
+            {active === "notifications" && !userContext?.isEmployee && <Notifications api={api} runAction={runAction} />}
           </main>
         </div>
       </div>
@@ -190,7 +250,7 @@ function LoginScreen({ onLogin }) {
         <form className="w-full max-w-md rounded-lg border border-line bg-white p-6 shadow-soft" onSubmit={submit}>
           <p className="text-xs font-semibold uppercase text-muted">NexusHR</p>
           <h1 className="mt-1 text-3xl font-bold text-ink">Sign in</h1>
-          <p className="mt-2 text-sm text-muted">Use the seeded admin account from the backend README or your own user.</p>
+          <p className="mt-2 text-sm text-muted">Use standard administrative accounts or seeded employee credentials profile metrics.</p>
           <div className="mt-6 space-y-4">
             <Field label="Email">
               <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
@@ -199,6 +259,11 @@ function LoginScreen({ onLogin }) {
               <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </Field>
           </div>
+          <div className="mt-3 rounded border border-line bg-panel p-2.5 text-xs text-muted">
+            <p className="font-semibold text-ink">Seeded Demo Credentials:</p>
+            <p className="mt-1">👑 Admin: <code className="text-brand">admin@nexushr.local</code> / <code className="text-brand">admin123</code></p>
+            <p>💼 Employee: <code className="text-brand">employee@nexushr.local</code> / <code className="text-brand">password123</code></p>
+          </div>
           {error ? <p className="mt-4 rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
           <button className="btn btn-primary mt-6 w-full" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button>
         </form>
@@ -206,7 +271,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function Dashboard({ metrics, attendanceMetrics, onLoadAttendance }) {
+function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }) {
   const items = [
     ["Total employees", metrics?.totalEmployees],
     ["Active", metrics?.activeEmployees],
@@ -217,13 +282,15 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance }) {
   ];
 
   return (
-      <Page title="Dashboard" subtitle="Executive metrics from /api/v1/dashboard/metrics.">
+      <Page title={userContext?.isEmployee ? "My Employee Dashboard" : "Executive Dashboard"} subtitle={userContext?.isEmployee ? "Personal workforce track summaries." : "Global executive oversight matrix indicators."}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {items.map(([label, value]) => <Stat key={label} label={label} value={value ?? "-"} />)}
         </div>
-        <Panel title="Attendance today" action={<button className="btn btn-secondary" onClick={onLoadAttendance}>Load</button>}>
-          {attendanceMetrics ? <JsonBlock data={attendanceMetrics} /> : <Empty text="Load today's attendance dashboard." />}
-        </Panel>
+        {!userContext?.isEmployee && (
+            <Panel title="Attendance today" action={<button className="btn btn-secondary" onClick={onLoadAttendance}>Load</button>}>
+              {attendanceMetrics ? <JsonBlock data={attendanceMetrics} /> : <Empty text="Load today's attendance dashboard." />}
+            </Panel>
+        )}
       </Page>
   );
 }
@@ -321,14 +388,14 @@ function Employees({ api, employees, refresh, runAction }) {
   );
 }
 
-function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAction }) {
+function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAction, userContext }) {
   const [employeeId, setEmployeeId] = useState(selectedEmployee);
   const [leave, setLeave] = useState({ leaveType: "ANNUAL", startDate: today, endDate: today, reason: "" });
   const [balances, setBalances] = useState([]);
 
   useEffect(() => {
-    if (!employeeId && selectedEmployee) setEmployeeId(selectedEmployee);
-  }, [selectedEmployee, employeeId]);
+    setEmployeeId(selectedEmployee);
+  }, [selectedEmployee]);
 
   async function punch() {
     await runAction(async () => {
@@ -352,16 +419,22 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
   }
 
   return (
-      <Page title="Attendance" subtitle="Punch attendance, submit leave requests, and view leave balances.">
+      <Page title="Attendance Tracker" subtitle="Punch simulation logging tracks directly into the database layers.">
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Quick punch">
+          <Panel title="Clock Execution Terminal">
             <div className="grid gap-3">
-              <EmployeeSelect employees={employees} value={employeeId} onChange={setEmployeeId} />
-              <button className="btn btn-primary" onClick={punch} disabled={!employeeId}>Record biometric punch</button>
-              <button className="btn btn-secondary" onClick={loadBalances} disabled={!employeeId}>Load leave balances</button>
+              {!userContext?.isEmployee ? (
+                  <EmployeeSelect employees={employees} value={employeeId} onChange={setEmployeeId} />
+              ) : (
+                  <div className="text-sm font-medium p-2 border border-line bg-panel rounded">
+                    Lock Bound Context Profile ID: <span className="font-mono text-xs text-brand">{employeeId || "resolving..."}</span>
+                  </div>
+              )}
+              <button className="btn btn-primary" onClick={punch} disabled={!employeeId}>Trigger Biometric Punch</button>
+              <button className="btn btn-secondary" onClick={loadBalances} disabled={!employeeId}>Inspect Leave Balances</button>
             </div>
           </Panel>
-          <Panel title="Leave request">
+          <Panel title="Request Leave Absence">
             <form className="grid gap-3 sm:grid-cols-2" onSubmit={requestLeave}>
               <Select label="Leave type" value={leave.leaveType} onChange={(leaveType) => setLeave({ ...leave, leaveType })} options={["ANNUAL", "SICK", "CASUAL", "UNPAID"]} />
               <div />
@@ -374,18 +447,22 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
             </form>
           </Panel>
         </div>
-        <Panel title="Leave balances">
-          {balances.length ? <DataTable columns={["Type", "Entitled", "Used", "Available"]} rows={balances.map((item) => [item.leaveType, item.entitledDays, item.usedDays, item.availableDays])} /> : <Empty text="No balances loaded." />}
+        <Panel title="Leave balances status tracker">
+          {balances.length ? <DataTable columns={["Type", "Entitled", "Used", "Available"]} rows={balances.map((item) => [item.leaveType, item.openingBalance, item.consumed, item.availableDays || item.openingBalance])} /> : <Empty text="No data streams parsed." />}
         </Panel>
       </Page>
   );
 }
 
-function Payroll({ api, selectedEmployee, runAction }) {
+function Payroll({ api, selectedEmployee, runAction, userContext }) {
   const [run, setRun] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
   const [payrollRun, setPayrollRun] = useState(null);
   const [employeeId, setEmployeeId] = useState(selectedEmployee);
   const [payslips, setPayslips] = useState([]);
+
+  useEffect(() => {
+    setEmployeeId(selectedEmployee);
+  }, [selectedEmployee]);
 
   async function calculate(event) {
     event.preventDefault();
@@ -403,51 +480,65 @@ function Payroll({ api, selectedEmployee, runAction }) {
 
   async function loadPayslips() {
     await runAction(async () => {
-      const path = payrollRun?.id ? `/api/v1/payroll/runs/${payrollRun.id}/payslips` : `/api/v1/payroll/employees/${employeeId}/payslips`;
+      const path = (!userContext?.isEmployee && payrollRun?.id)
+          ? `/api/v1/payroll/runs/${payrollRun.id}/payslips`
+          : `/api/v1/payroll/employees/${employeeId}/payslips`;
       setPayslips(await api.get(path));
     });
   }
 
   return (
-      <Page title="Payroll" subtitle="Calculate payroll runs, approve them, and inspect payslips.">
-        <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <Panel title="Run payroll">
-            <form className="grid gap-3" onSubmit={calculate}>
-              <Input label="Year" type="number" value={run.year} onChange={(year) => setRun({ ...run, year })} required />
-              <Input label="Month" type="number" min="1" max="12" value={run.month} onChange={(month) => setRun({ ...run, month })} required />
-              <button className="btn btn-primary">Calculate</button>
-            </form>
-            {payrollRun ? (
-                <div className="mt-4 rounded-md border border-line bg-panel p-3 text-sm">
-                  <p className="font-semibold">{payrollRun.payrollYear}-{String(payrollRun.payrollMonth).padStart(2, "0")}</p>
-                  <p className="mt-1 text-muted">Status: {payrollRun.status}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button className="btn btn-secondary" onClick={approve}>Approve</button>
-                    <a className="btn btn-secondary" href={`${API_BASE_URL}/payroll/runs/${payrollRun.id}/export.csv`}>Export CSV</a>
+      <Page title="Compensation Matrix" subtitle="View issued statements or perform background calculations.">
+        <div className={`grid gap-4 ${userContext?.isEmployee ? "grid-cols-1" : "xl:grid-cols-[360px_minmax(0,1fr)]"}`}>
+          {!userContext?.isEmployee && (
+              <Panel title="Run payroll calculations">
+                <form className="grid gap-3" onSubmit={calculate}>
+                  <Input label="Year" type="number" value={run.year} onChange={(year) => setRun({ ...run, year })} required />
+                  <Input label="Month" type="number" min="1" max="12" value={run.month} onChange={(month) => setRun({ ...run, month })} required />
+                  <button className="btn btn-primary">Calculate</button>
+                </form>
+                {payrollRun ? (
+                    <div className="mt-4 rounded-md border border-line bg-panel p-3 text-sm">
+                      <p className="font-semibold">{payrollRun.payrollYear}-{String(payrollRun.payrollMonth).padStart(2, "0")}</p>
+                      <p className="mt-1 text-muted">Status: {payrollRun.status}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button className="btn btn-secondary" onClick={approve}>Approve</button>
+                        <a className="btn btn-secondary" href={`${API_BASE_URL}/payroll/runs/${payrollRun.id}/export.csv`}>Export CSV</a>
+                      </div>
+                    </div>
+                ) : null}
+              </Panel>
+          )}
+          <Panel title="Personal Payslips Directory">
+            <div className="mb-3 flex gap-3 items-end">
+              {userContext?.isEmployee ? (
+                  <div className="text-sm font-medium p-2 border border-line bg-panel rounded w-full">
+                    Active verification token target: <span className="font-mono text-xs text-brand">{employeeId}</span>
                   </div>
-                </div>
-            ) : null}
-          </Panel>
-          <Panel title="Payslips">
-            <div className="mb-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <Input label="Employee ID fallback" value={employeeId} onChange={setEmployeeId} />
-              <button className="btn btn-secondary self-end" onClick={loadPayslips}>Load payslips</button>
+              ) : (
+                  <Input label="Employee ID lookup manual override" value={employeeId} onChange={setEmployeeId} />
+              )}
+              <button className="btn btn-secondary" onClick={loadPayslips} disabled={!employeeId}>Load statements</button>
             </div>
             {payslips.length ? (
-                <DataTable columns={["Employee", "Gross", "Tax", "Other", "Net"]} rows={payslips.map((slip) => [shortId(slip.employeeId), money(slip.grossSalary), money(slip.taxDeduction), money(slip.otherDeductions), money(slip.netSalary)])} />
-            ) : <Empty text="No payslips loaded." />}
+                <DataTable columns={["Profile Context", "Gross", "Tax", "Other Deductions", "Net Distributed"]} rows={payslips.map((slip) => [shortId(slip.employeeId), money(slip.grossSalary), money(slip.taxDeduction), money(slip.otherDeductions), money(slip.netSalary)])} />
+            ) : <Empty text="No statements found." />}
           </Panel>
         </div>
       </Page>
   );
 }
 
-function Performance({ api, selectedEmployee, runAction }) {
+function Performance({ api, selectedEmployee, runAction, userContext }) {
   const [employeeId, setEmployeeId] = useState(selectedEmployee);
   const [goal, setGoal] = useState({ title: "", description: "", dueDate: today });
   const [review, setReview] = useState({ cycle: "2026-H1", managerRating: "4", peerRating: "4", selfRating: "4", feedback: "" });
   const [goals, setGoals] = useState([]);
   const [scorecard, setScorecard] = useState([]);
+
+  useEffect(() => {
+    setEmployeeId(selectedEmployee);
+  }, [selectedEmployee]);
 
   async function createGoal(event) {
     event.preventDefault();
@@ -467,6 +558,7 @@ function Performance({ api, selectedEmployee, runAction }) {
   }
 
   async function loadPerformance() {
+    if (!employeeId) return;
     await runAction(async () => {
       const [nextGoals, nextScorecard] = await Promise.all([
         api.get(`/api/v1/performance/employees/${employeeId}/goals`),
@@ -477,16 +569,25 @@ function Performance({ api, selectedEmployee, runAction }) {
     });
   }
 
+  // Automate fetching context metrics for individual views
+  useEffect(() => {
+    if (employeeId && userContext?.isEmployee) {
+      loadPerformance();
+    }
+  }, [employeeId]);
+
   return (
-      <Page title="Performance" subtitle="Manage goals and weighted 360-degree reviews.">
-        <Panel title="Employee selection">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <Input label="Employee ID" value={employeeId} onChange={setEmployeeId} />
-            <button className="btn btn-secondary self-end" onClick={loadPerformance} disabled={!employeeId}>Load</button>
-          </div>
-        </Panel>
+      <Page title="Performance Hub" subtitle="Track milestone tracking configurations inside security containers.">
+        {!userContext?.isEmployee && (
+            <Panel title="Employee context matching">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Input label="Employee target tracker ID" value={employeeId} onChange={setEmployeeId} />
+                <button className="btn btn-secondary self-end" onClick={loadPerformance} disabled={!employeeId}>Load parameters</button>
+              </div>
+            </Panel>
+        )}
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Create goal">
+          <Panel title="Create active tracking task milestone">
             <form className="grid gap-3" onSubmit={createGoal}>
               <Input label="Title" value={goal.title} onChange={(title) => setGoal({ ...goal, title })} required />
               <Input label="Due date" type="date" value={goal.dueDate} onChange={(dueDate) => setGoal({ ...goal, dueDate })} />
@@ -496,25 +597,28 @@ function Performance({ api, selectedEmployee, runAction }) {
               <button className="btn btn-primary" disabled={!employeeId}>Save goal</button>
             </form>
           </Panel>
-          <Panel title="Create review">
-            <form className="grid gap-3 sm:grid-cols-2" onSubmit={createReview}>
-              <Input label="Cycle" value={review.cycle} onChange={(cycle) => setReview({ ...review, cycle })} required />
-              <Input label="Manager rating" type="number" min="1" max="5" step="0.1" value={review.managerRating} onChange={(managerRating) => setReview({ ...review, managerRating })} required />
-              <Input label="Peer rating" type="number" min="1" max="5" step="0.1" value={review.peerRating} onChange={(peerRating) => setReview({ ...review, peerRating })} required />
-              <Input label="Self rating" type="number" min="1" max="5" step="0.1" value={review.selfRating} onChange={(selfRating) => setReview({ ...review, selfRating })} required />
-              <Field label="Feedback">
-                <textarea className="field min-h-24" value={review.feedback} onChange={(event) => setReview({ ...review, feedback: event.target.value })} />
-              </Field>
-              <button className="btn btn-primary self-end" disabled={!employeeId}>Save review</button>
-            </form>
-          </Panel>
+
+          {!userContext?.isEmployee && (
+              <Panel title="Create performance evaluation metrics matrix">
+                <form className="grid gap-3 sm:grid-cols-2" onSubmit={createReview}>
+                  <Input label="Cycle" value={review.cycle} onChange={(cycle) => setReview({ ...review, cycle })} required />
+                  <Input label="Manager rating" type="number" min="1" max="5" step="0.1" value={review.managerRating} onChange={(managerRating) => setReview({ ...review, managerRating })} required />
+                  <Input label="Peer rating" type="number" min="1" max="5" step="0.1" value={review.peerRating} onChange={(peerRating) => setReview({ ...review, peerRating })} required />
+                  <Input label="Self rating" type="number" min="1" max="5" step="0.1" value={review.selfRating} onChange={(selfRating) => setReview({ ...review, selfRating })} required />
+                  <Field label="Feedback">
+                    <textarea className="field min-h-24" value={review.feedback} onChange={(event) => setReview({ ...review, feedback: event.target.value })} />
+                  </Field>
+                  <button className="btn btn-primary self-end" disabled={!employeeId}>Save review</button>
+                </form>
+              </Panel>
+          )}
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Goals">
-            {goals.length ? <DataTable columns={["Title", "Due", "Progress"]} rows={goals.map((item) => [item.title, item.dueDate || "-", `${item.progress ?? 0}%`])} /> : <Empty text="No goals loaded." />}
+          <Panel title="Milestones tracks list">
+            {goals.length ? <DataTable columns={["Title", "Due", "Progress"]} rows={goals.map((item) => [item.title, item.dueDate || "-", `${item.progress ?? 0}%`])} /> : <Empty text="No records active." />}
           </Panel>
-          <Panel title="Scorecard">
-            {scorecard.length ? <DataTable columns={["Cycle", "Manager", "Peer", "Self", "Score", "Status"]} rows={scorecard.map((item) => [item.cycle, item.managerRating, item.peerRating, item.selfRating, item.score, <Badge value={item.status} />])} /> : <Empty text="No reviews loaded." />}
+          <Panel title="360 Degree evaluation report card">
+            {scorecard.length ? <DataTable columns={["Cycle", "Manager weight", "Peer weight", "Self weight", "Calculated index score", "Status"]} rows={scorecard.map((item) => [item.cycle, item.managerRating, item.peerRating, item.selfRating, item.score, <Badge value={item.status} />])} /> : <Empty text="No formal reports compiled." />}
           </Panel>
         </div>
       </Page>
@@ -654,6 +758,7 @@ function Input({ label, value, onChange, type = "text", ...props }) {
   );
 }
 
+// Fixed dropdown values parsing to use correct string mappings
 function Select({ label, value, onChange, options }) {
   return (
       <Field label={label}>
@@ -679,7 +784,6 @@ function EmployeeSelect({ employees, value, onChange }) {
   );
 }
 
-// Rest of your standard UI rendering helper methods left untouched
 function Badge({ value }) { return <span className="inline-flex rounded-md bg-brand/10 px-2 py-1 text-xs font-semibold text-brand">{value || "-"}</span>; }
 function Empty({ text }) { return <p className="rounded-md border border-dashed border-line bg-panel px-4 py-6 text-center text-sm text-muted">{text}</p>; }
 function JsonBlock({ data }) { return <pre className="max-h-96 overflow-auto rounded-md bg-ink p-4 text-xs text-white">{JSON.stringify(data, null, 2)}</pre>; }
