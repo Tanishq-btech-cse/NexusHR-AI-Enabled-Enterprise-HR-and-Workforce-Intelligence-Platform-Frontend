@@ -266,10 +266,12 @@ function LoginScreen({ onLogin }) {
               <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </Field>
           </div>
-          <div className="mt-3 rounded border border-line bg-panel p-2.5 text-xs text-muted">
-            <p className="font-semibold text-ink">Seeded Demo Credentials:</p>
-            <p className="mt-1">👑 Admin: <code className="text-brand">admin@nexushr.local</code> / <code className="text-brand">admin123</code></p>
+          <div className="mt-3 rounded border border-line bg-panel p-2.5 text-xs text-muted space-y-1">
+            <p className="font-semibold text-ink">System Login Verification Nodes:</p>
+            <p>👑 Admin: <code className="text-brand">admin@nexushr.local</code> / <code className="text-brand">admin123</code></p>
             <p>💼 Employee: <code className="text-brand">employee@nexushr.local</code> / <code className="text-brand">password123</code></p>
+            {/* 🌟 ADDED: Dynamic notification text for new corporate additions */}
+            <p className="mt-1 pt-1 border-t border-line text-gold font-medium">✨ Newly added team members can sign in with their unique work email and the default system string: <code className="text-brand">password123</code></p>
           </div>
           {error ? <p className="mt-4 rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
           <button className="btn btn-primary mt-6 w-full" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button>
@@ -278,7 +280,6 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// 🌟 FIXED: Replaced raw JsonBlock parsing with a clean summary matrix UI for attendance attributes
 function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }) {
   const items = [
     ["Total employees", metrics?.totalEmployees],
@@ -324,6 +325,7 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
   );
 }
 
+// ... Rest of the file stays exactly as you provided it below Dashboard
 function Employees({ api, employees, refresh, runAction }) {
   const [form, setForm] = useState(defaultEmployee);
   const [role, setRole] = useState({ employeeId: "", department: "", designation: "", managerId: "" });
@@ -792,12 +794,13 @@ function Select({ label, value, onChange, options }) {
   return (
       <Field label={label}>
         <select className="field" value={value} onChange={(event) => onChange(event.target.value)}>
-          {options.map((option) => <option key={option} value={option}>{option}</option>)}
+               {options.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       </Field>
   );
 }
 
+// ... Rest of file stays exactly as you provided
 function EmployeeSelect({ employees, value, onChange }) {
   return (
       <Field label="Employee">
