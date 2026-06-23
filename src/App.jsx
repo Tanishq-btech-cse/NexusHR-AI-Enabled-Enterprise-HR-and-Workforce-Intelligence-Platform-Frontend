@@ -46,63 +46,51 @@ function parseJwt(token) {
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [active, setActive] = useState("dashboard");
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [metrics, setMetrics] = useState(null);
+  const [attendanceMetrics, setAttendanceMetrics] = useState(null);
+  const [insights, setInsights] = useState([]);
 
-  const api = useMemo(() => createApi(token), [token]);
+  // Extracted user context profile states
   const userContext = useMemo(() => {
     if (!token) return null;
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      const roles = payload.roles || [];
-      const isAdmin = roles.some(r => ["ADMIN", "ROLE_ADMIN", "HR"].includes(r));
-      return { email: payload.sub, isEmployee: !isAdmin };
-    } catch { return null; }
+    const payload = parseJwt(token);
+    if (!payload) return null;
+
+    // Normalize role string checks coming from our backend config format
+    const parsedRoles = payload.roles || [];
+    const isEmployee = parsedRoles.includes("EMPLOYEE") || parsedRoles.includes("ROLE_EMPLOYEE");
+    const isAdmin = parsedRoles.includes("ADMIN") || parsedRoles.includes("ROLE_ADMIN") || parsedRoles.includes("HR");
+
+    return {
+      email: payload.sub,
+      roles: parsedRoles,
+      isEmployee: isEmployee && !isAdmin, // Explicit flag mapping
+    };
   }, [token]);
 
-  const visibleNavItems = useMemo(() =>
-          userContext?.isEmployee ? navItems.filter(i => !i.adminOnly) : navItems,
-      [userContext]);
+  // Determine current employee identity reference tracking safely
+  const currentEmployeeId = useMemo(() => {
+    if (!userContext || employees.length === 0) return "";
+    if (userContext.isEmployee) {
+      const match = employees.find(e => e.workEmail?.toLowerCase() === userContext.email?.toLowerCase());
+      return match ? match.id : "";
+    }
+    return employees[0]?.id || "";
+  }, [userContext, employees]);
 
-  async function runAction(action, successText) {
-    setLoading(true); setMessage("");
-    try { const res = await action(); if (successText) setMessage(successText); return res; }
-    catch (e) { setMessage(e.message); return null; }
-    finally { setLoading(false); }
-  }
+  const api = useMemo(() => createApi(token), [token]);
 
-  async function refreshEmployees() {
-    if (!token) return;
-    const data = await api.get("/api/v1/employees");
-    setEmployees(Array.isArray(data) ? data : []);
-  }
+  // Filter sidebar navigational nodes dynamically depending on credentials status
+  const visibleNavItems = useMemo(() => {
+    if (userContext?.isEmployee) {
+      return navItems.filter(item => !item.adminOnly);
+    }
+    return navItems;
+  }, [userContext]);
 
-  useEffect(() => { if (token) refreshEmployees(); }, [token]);
-
-  if (!token) return <LoginScreen onLogin={(t) => { setToken(t); localStorage.setItem(TOKEN_KEY, t); }} />;
-
-  return (
-      <div className="min-h-screen bg-panel flex">
-        <aside className="w-64 bg-white border-r border-line hidden lg:block">
-          <div className="p-6 border-b border-line"><h1 className="font-bold text-ink">NexusHR</h1></div>
-          <nav className="p-3">
-            {visibleNavItems.map(item => (
-                <button key={item.id} className={`w-full p-3 text-left rounded ${active === item.id ? "bg-brand text-white" : "hover:bg-panel"}`} onClick={() => setActive(item.id)}>
-                  {item.label}
-                </button>
-            ))}
-          </nav>
-        </aside>
-        <main className="flex-1 p-8">
-          {message && <div className="mb-4 p-3 bg-brand/10 text-brand rounded">{message}</div>}
-          {active === "employees" && !userContext?.isEmployee && (
-              <Employees api={api} employees={employees} refresh={refreshEmployees} runAction={runAction} />
-          )}
-        </main>
-      </div>
-  );
-}
   function handleToken(nextToken) {
     setToken(nextToken);
     localStorage.setItem(TOKEN_KEY, nextToken);
@@ -342,43 +330,47 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
 }
 
 function Employees({ api, employees, refresh, runAction }) {
+  const [form, setForm] = useState(defaultEmployee);
+  const [role, setRole] = useState({ employeeId: "", department: "", designation: "", managerId: "" });
   const [securityRole, setSecurityRole] = useState({ employeeId: "", role: "EMPLOYEE" });
 
-  async function removeEmployee(id) {
-    if (!window.confirm("Permanently delete employee?")) return;
-    await runAction(() => api.request("DELETE", `/api/v1/employees/${id}`), "Employee deleted.");
-    refresh();
+  async function createEmployee(event) {
+    event.preventDefault();
+    await runAction(async () => {
+      const profile = form.annualSalary ? { annualSalary: Number(form.annualSalary) } : {};
+      const employee = await api.post("/api/v1/employees", {
+        employeeCode: form.employeeCode,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        workEmail: form.workEmail,
+        joiningDate: form.joiningDate,
+        profile
+      });
+      if (form.department && form.designation) {
+        await api.put(`/api/v1/employees/${employee.id}/role`, {
+          department: form.department,
+          designation: form.designation,
+          managerId: null
+        });
+      }
+      setForm(defaultEmployee);
+      await refresh();
+    }, "Employee saved");
   }
 
-  async function assignSecurityRole(e) {
-    e.preventDefault();
-    await runAction(() => api.put(`/api/v1/employees/${securityRole.employeeId}/security-role`, { role: securityRole.role }), "Role updated.");
-    refresh();
+  async function assignRole(event) {
+    event.preventDefault();
+    await runAction(async () => {
+      await api.put(`/api/v1/employees/${role.employeeId}/role`, {
+        department: role.department,
+        designation: role.designation,
+        managerId: role.managerId || null
+      });
+      setRole({ employeeId: "", department: "", designation: "", managerId: "" });
+      await refresh();
+    }, "Role updated");
   }
 
-  return (
-      <div className="space-y-6">
-        <Panel title="Directory">
-          <DataTable columns={["Name", "Actions"]} rows={(employees || []).map(e => [
-            `${e.firstName} ${e.lastName}`,
-            <button className="text-coral font-bold" onClick={() => removeEmployee(e.id)}>Delete</button>
-          ])} />
-        </Panel>
-        <Panel title="Assign Security Role">
-          <form onSubmit={assignSecurityRole} className="space-y-3">
-            <select className="field" onChange={(e) => setSecurityRole({...securityRole, employeeId: e.target.value})}>
-              <option>Select Employee</option>
-              {(employees || []).map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
-            </select>
-            <select className="field" onChange={(e) => setSecurityRole({...securityRole, role: e.target.value})}>
-              {["EMPLOYEE", "MANAGER", "HR", "ADMIN"].map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-            <button className="btn btn-primary">Save Role</button>
-          </form>
-        </Panel>
-      </div>
-  );
-}
   async function assignSecurityRole(event) {
     event.preventDefault();
     if (!securityRole.employeeId) return;
