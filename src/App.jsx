@@ -7,7 +7,7 @@ const navItems = [
   { id: "dashboard", label: "Dashboard", mark: "D" },
   { id: "employees", label: "Employees", mark: "E", adminOnly: true },
   { id: "attendance", label: "Attendance", mark: "A" },
-  { id: "payroll", label: "Payroll", mark: "P" }, // Left available for employees to view personal slips
+  { id: "payroll", label: "Payroll", mark: "P" },
   { id: "performance", label: "Performance", mark: "R" },
   { id: "insights", label: "Insights", mark: "I", adminOnly: true },
   { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
@@ -26,7 +26,6 @@ const defaultEmployee = {
 
 const today = new Date().toISOString().slice(0, 10);
 
-// Helper function to extract user details safely from raw Spring Security JWT
 function parseJwt(token) {
   try {
     const base64Url = token.split(".")[1];
@@ -53,13 +52,11 @@ function App() {
   const [attendanceMetrics, setAttendanceMetrics] = useState(null);
   const [insights, setInsights] = useState([]);
 
-  // Extracted user context profile states
   const userContext = useMemo(() => {
     if (!token) return null;
     const payload = parseJwt(token);
     if (!payload) return null;
 
-    // Normalize role string checks coming from our backend config format
     const parsedRoles = payload.roles || [];
     const isEmployee = parsedRoles.includes("EMPLOYEE") || parsedRoles.includes("ROLE_EMPLOYEE");
     const isAdmin = parsedRoles.includes("ADMIN") || parsedRoles.includes("ROLE_ADMIN") || parsedRoles.includes("HR");
@@ -67,11 +64,10 @@ function App() {
     return {
       email: payload.sub,
       roles: parsedRoles,
-      isEmployee: isEmployee && !isAdmin, // Explicit flag mapping
+      isEmployee: isEmployee && !isAdmin,
     };
   }, [token]);
 
-  // Determine current employee identity reference tracking safely
   const currentEmployeeId = useMemo(() => {
     if (!userContext || employees.length === 0) return "";
     if (userContext.isEmployee) {
@@ -83,7 +79,6 @@ function App() {
 
   const api = useMemo(() => createApi(token), [token]);
 
-  // Filter sidebar navigational nodes dynamically depending on credentials status
   const visibleNavItems = useMemo(() => {
     if (userContext?.isEmployee) {
       return navItems.filter(item => !item.adminOnly);
@@ -120,7 +115,6 @@ function App() {
     }
   }
 
-  // Employees safely request personal target index to resolve tracking terminal context IDs
   async function refreshBaseData() {
     if (!token) return;
     await runAction(async () => {
@@ -142,7 +136,6 @@ function App() {
     });
   }
 
-  // FIXED: Added security guard clause to stop unauthorized 403 network calls from employee roles
   async function refreshAttendanceDashboard() {
     if (!token) return;
     if (userContext?.isEmployee) return;
@@ -154,7 +147,7 @@ function App() {
 
   async function refreshInsights() {
     if (!token) return;
-    if (userContext?.isEmployee) return; // Prevent unauthorized background noise calls
+    if (userContext?.isEmployee) return;
     await runAction(async () => {
       setInsights(await api.get("/api/v1/insights/organization"));
     });
@@ -162,7 +155,7 @@ function App() {
 
   useEffect(() => {
     refreshBaseData();
-  }, [token, userContext]); // Track user context profile changes across sessions
+  }, [token, userContext]);
 
   if (!token) {
     return <LoginScreen onLogin={handleToken} />;
@@ -220,7 +213,7 @@ function App() {
 
           <main>
             {active === "dashboard" && <Dashboard metrics={metrics} attendanceMetrics={attendanceMetrics} onLoadAttendance={refreshAttendanceDashboard} userContext={userContext} />}
-            {active === "employees" && !userContext?.isEmployee && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} />}
+            {active === "employees" && !userContext?.isEmployee && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} userContext={userContext} />}
             {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
             {active === "payroll" && <Payroll api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
             {active === "performance" && <Performance api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
@@ -329,7 +322,7 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
   );
 }
 
-function Employees({ api, employees, refresh, runAction }) {
+function Employees({ api, employees, refresh, runAction, userContext }) {
   const [form, setForm] = useState(defaultEmployee);
   const [role, setRole] = useState({ employeeId: "", department: "", designation: "", managerId: "" });
   const [securityRole, setSecurityRole] = useState({ employeeId: "", role: "EMPLOYEE" });
@@ -440,18 +433,23 @@ function Employees({ api, employees, refresh, runAction }) {
                 <button className="btn btn-primary">Update role</button>
               </form>
             </Panel>
-            <Panel title="Assign security platform authorization">
-              <form className="grid gap-3" onSubmit={assignSecurityRole}>
-                <EmployeeSelect employees={employees} value={securityRole.employeeId} onChange={(employeeId) => setSecurityRole({ ...securityRole, employeeId })} />
-                <Select
-                    label="System permission tier clearance"
-                    value={securityRole.role}
-                    onChange={(role) => setSecurityRole({ ...securityRole, role })}
-                    options={["EMPLOYEE", "MANAGER", "HR", "ADMIN"]}
-                />
-                <button className="btn btn-primary">Commit permission shift</button>
-              </form>
-            </Panel>
+
+            {/* 🌟 ALLOW HR AND ADMIN: Both roles can now manage platform authorizations */}
+            {(userContext?.roles?.includes("ADMIN") || userContext?.roles?.includes("HR")) && (
+                <Panel title="Assign security platform authorization">
+                  <form className="grid gap-3" onSubmit={assignSecurityRole}>
+                    <EmployeeSelect employees={employees} value={securityRole.employeeId} onChange={(employeeId) => setSecurityRole({ ...securityRole, employeeId })} />
+                    <Select
+                        label="System permission tier clearance"
+                        value={securityRole.role}
+                        onChange={(role) => setSecurityRole({ ...securityRole, role })}
+                        /* Admins can assign any role. HR can assign Employee, Manager, or HR */
+                        options={userContext?.roles?.includes("ADMIN") ? ["EMPLOYEE", "MANAGER", "HR", "ADMIN"] : ["EMPLOYEE", "MANAGER", "HR"]}
+                    />
+                    <button className="btn btn-primary">Commit permission shift</button>
+                  </form>
+                </Panel>
+            )}
           </div>
         </div>
       </Page>
@@ -853,7 +851,6 @@ function EmployeeSelect({ employees, value, onChange }) {
 
 function Badge({ value }) { return <span className="inline-flex rounded-md bg-brand/10 px-2 py-1 text-xs font-semibold text-brand">{value || "-"}</span>; }
 function Empty({ text }) { return <p className="rounded-md border border-dashed border-line bg-panel px-4 py-6 text-center text-sm text-muted">{text}</p>; }
-function JsonBlock({ data }) { return <pre className="max-h-96 overflow-auto rounded-md bg-ink p-4 text-xs text-white">{JSON.stringify(data, null, 2)}</pre>; }
 function InsightCard({ insight }) { return ( <div className="rounded-lg border border-line bg-panel p-4"> <p className="text-xs font-semibold uppercase text-muted">{shortId(insight.employeeId)}</p> <div className="mt-3 grid grid-cols-2 gap-2"> <Stat label="Attrition risk" value={formatPercent(insight.attritionRisk)} /> <Stat label="Engagement" value={formatPercent(insight.engagementScore)} /> </div> <p className="mt-4 text-sm font-semibold text-ink">Skill gaps</p> <p className="mt-1 text-sm text-muted">{(insight.skillGaps || []).join(", ") || "-"}</p> <p className="mt-4 text-sm font-semibold text-ink">Recommendations</p> <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted"> {(insight.recommendations || ["No recommendations"]).map((item) => <li key={item}>{item}</li>)} </ul> </div> ); }
 
 function createApi(token) {
