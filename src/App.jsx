@@ -212,7 +212,8 @@ function App() {
           </header>
 
           <main>
-            {active === "dashboard" && <Dashboard metrics={metrics} attendanceMetrics={attendanceMetrics} onLoadAttendance={refreshAttendanceDashboard} userContext={userContext} />}
+            {/* 🌟 FIXED: Passing api and runAction explicitly to Dashboard for the AI search tool */}
+            {active === "dashboard" && <Dashboard metrics={metrics} attendanceMetrics={attendanceMetrics} onLoadAttendance={refreshAttendanceDashboard} userContext={userContext} api={api} runAction={runAction} />}
             {active === "employees" && !userContext?.isEmployee && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} userContext={userContext} />}
             {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
             {active === "payroll" && <Payroll api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
@@ -277,7 +278,26 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }) {
+function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, api, runAction }) {
+  // 🌟 NEW: AI State variables
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [asking, setAsking] = useState(false);
+
+  // 🌟 NEW: AI Query Execution Function
+  async function askAi(event) {
+    event.preventDefault();
+    setAsking(true);
+    try {
+      const response = await api.post("/api/v1/ai/query", { prompt: aiQuery });
+      setAiResponse(response.answer || response.message || "Query processed successfully.");
+    } catch (error) {
+      setAiResponse("⚠️ AI Service is currently unreachable. Please check your backend AI endpoint configuration.");
+    } finally {
+      setAsking(false);
+    }
+  }
+
   const items = [
     ["Total employees", metrics?.totalEmployees],
     ["Active", metrics?.activeEmployees],
@@ -289,9 +309,36 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext }
 
   return (
       <Page title={userContext?.isEmployee ? "My Employee Dashboard" : "Executive Dashboard"} subtitle={userContext?.isEmployee ? "Personal workforce track summaries." : "Global executive oversight matrix indicators."}>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+
+        {/* 🌟 NEW: AI HR Assistant Search Panel */}
+        {!userContext?.isEmployee && (
+            <Panel title="✨ Ask Nexus AI">
+              <form className="flex flex-col gap-3 sm:flex-row" onSubmit={askAi}>
+                <div className="flex-1">
+                  <Input
+                      label=""
+                      placeholder="e.g., Give me the top 5 performing employees..."
+                      value={aiQuery}
+                      onChange={setAiQuery}
+                      required
+                  />
+                </div>
+                <button className="btn btn-primary h-10 self-end sm:self-auto" disabled={asking}>
+                  {asking ? "Thinking..." : "Ask AI"}
+                </button>
+              </form>
+              {aiResponse && (
+                  <div className="mt-4 rounded-md border border-brand/20 bg-brand/5 p-4 text-sm text-ink whitespace-pre-wrap leading-relaxed">
+                    {aiResponse}
+                  </div>
+              )}
+            </Panel>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 mt-4">
           {items.map(([label, value]) => <Stat key={label} label={label} value={value ?? "-"} />)}
         </div>
+
         {!userContext?.isEmployee && (
             <Panel title="Attendance today" action={<button className="btn btn-secondary" onClick={onLoadAttendance}>Load</button>}>
               {attendanceMetrics ? (
@@ -434,7 +481,6 @@ function Employees({ api, employees, refresh, runAction, userContext }) {
               </form>
             </Panel>
 
-            {/* 🌟 ALLOW HR AND ADMIN: Both roles can now manage platform authorizations */}
             {(userContext?.roles?.includes("ADMIN") || userContext?.roles?.includes("HR")) && (
                 <Panel title="Assign security platform authorization">
                   <form className="grid gap-3" onSubmit={assignSecurityRole}>
@@ -443,7 +489,6 @@ function Employees({ api, employees, refresh, runAction, userContext }) {
                         label="System permission tier clearance"
                         value={securityRole.role}
                         onChange={(role) => setSecurityRole({ ...securityRole, role })}
-                        /* Admins can assign any role. HR can assign Employee, Manager, or HR */
                         options={userContext?.roles?.includes("ADMIN") ? ["EMPLOYEE", "MANAGER", "HR", "ADMIN"] : ["EMPLOYEE", "MANAGER", "HR"]}
                     />
                     <button className="btn btn-primary">Commit permission shift</button>
@@ -485,11 +530,16 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     }, `Leave context has been updated to ${statusString}`);
   }
 
-  async function punch() {
+  // 🌟 NEW: Punch IN / Punch OUT tracking handler
+  async function punch(type) {
     await runAction(async () => {
-      await api.post("/api/v1/attendance/biometric-punch", { employeeId, deviceId: "WEB-KIOSK-01" });
+      await api.post("/api/v1/attendance/biometric-punch", {
+        employeeId,
+        deviceId: "WEB-KIOSK-01",
+        punchType: type
+      });
       await refreshAttendance();
-    }, "Punch recorded");
+    }, `Punch ${type} recorded successfully`);
   }
 
   async function requestLeave(event) {
@@ -525,7 +575,17 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
                     Lock Bound Context Profile ID: <span className="font-mono text-xs text-brand">{employeeId || "resolving..."}</span>
                   </div>
               )}
-              <button className="btn btn-primary" onClick={punch} disabled={!employeeId}>Trigger Biometric Punch</button>
+
+              {/* 🌟 NEW: Split buttons for Punch IN and Punch OUT */}
+              <div className="flex gap-2">
+                <button className="btn btn-primary flex-1" onClick={() => punch('IN')} disabled={!employeeId}>
+                  Punch IN
+                </button>
+                <button className="btn flex-1 min-h-8 px-4 py-2 text-sm bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-semibold" onClick={() => punch('OUT')} disabled={!employeeId}>
+                  Punch OUT
+                </button>
+              </div>
+
               <button className="btn btn-secondary" onClick={loadBalances} disabled={!employeeId}>Inspect Leave Balances</button>
             </div>
           </Panel>
