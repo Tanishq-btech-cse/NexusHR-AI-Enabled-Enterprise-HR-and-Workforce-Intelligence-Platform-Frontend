@@ -886,7 +886,7 @@ async function parseResponse(response) {
 }
 
 function shortId(value) { return value ? `${value.slice(0, 8)}...` : "-"; }
-function money(value) { const number = Number(value || 0); return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(number); }
+function money(value) { const number = Number(value || 0); return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(number); }
 
 function formatPercent(value) {
   if (value === undefined || value === null || value === "-") return "-";
