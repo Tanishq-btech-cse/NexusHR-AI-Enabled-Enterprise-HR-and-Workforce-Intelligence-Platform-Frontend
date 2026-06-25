@@ -571,19 +571,40 @@ function Employees({ api, employees, refresh, runAction, userContext }) {
     }, "Employee records permanently removed");
   }
 
+  // 🌟 NEW: TOGGLE REMOTE WORK MODEL
+  async function toggleRemote(id, isCurrentlyRemote) {
+    await runAction(async () => {
+      await api.patch(`/api/v1/employees/${id}/remote?isRemote=${!isCurrentlyRemote}`);
+      await refresh();
+    }, `Work model successfully updated to ${!isCurrentlyRemote ? "REMOTE" : "OFFICE"}`);
+  }
+
   return (
       <Page title="Employees" subtitle="Create employees, assign departments, and manage global workforce configurations.">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
           <Panel title="Employee directory">
             <DataTable
-                columns={["Code", "Name", "Email", "Team", "Status", "Actions"]}
+                // 🌟 Added "Work Model" to columns
+                columns={["Code", "Name", "Email", "Team", "Work Model", "Status", "Actions"]}
                 rows={employees.map((employee) => [
                   employee.employeeCode,
                   `${employee.firstName} ${employee.lastName}`,
                   employee.workEmail,
                   [employee.department, employee.designation].filter(Boolean).join(" / ") || "-",
+
+                  // 🌟 Added Remote/Office Badge
+                  <span className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${employee.isRemote ? "bg-brand/10 text-brand" : "bg-panel border border-line text-ink"}`}>
+                    {employee.isRemote ? "REMOTE" : "OFFICE"}
+                  </span>,
+
                   <Badge value={employee.status} />,
+
                   <div className="flex flex-wrap gap-1.5" key={employee.id}>
+                    {/* 🌟 Added Remote Toggle Button */}
+                    <button className="btn btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => toggleRemote(employee.id, employee.isRemote)}>
+                      {employee.isRemote ? "Set to Office" : "Set to Remote"}
+                    </button>
+
                     <button className="btn btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => offboard(employee.id)}>Offboard</button>
                     <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-semibold" onClick={() => removeEmployee(employee.id)}>Delete</button>
                   </div>
@@ -949,7 +970,6 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
   );
 }
 
-// 🌟 FULLY UPDATED DOCUMENT COMPONENT
 function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
   const [file, setFile] = useState(null);
   const [documentType, setDocumentType] = useState("ID_CARD");
