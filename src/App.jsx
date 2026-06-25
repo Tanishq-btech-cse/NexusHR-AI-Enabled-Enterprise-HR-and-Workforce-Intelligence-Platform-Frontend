@@ -247,7 +247,10 @@ function App() {
             {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
             {active === "payroll" && <Payroll api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
             {active === "performance" && <Performance api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
-            {active === "documents" && <Documents api={api} runAction={runAction} userContext={userContext} currentEmployeeId={currentEmployeeId} />}
+
+            {/* 🌟 Document component with the passed token */}
+            {active === "documents" && <Documents api={api} runAction={runAction} userContext={userContext} currentEmployeeId={currentEmployeeId} token={token} />}
+
             {active === "insights" && !userContext?.isEmployee && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
             {active === "notifications" && !userContext?.isEmployee && <Notifications api={api} runAction={runAction} />}
           </main>
@@ -946,7 +949,8 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
   );
 }
 
-function Documents({ api, runAction, userContext, currentEmployeeId }) {
+// 🌟 FULLY UPDATED DOCUMENT COMPONENT
+function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
   const [file, setFile] = useState(null);
   const [documentType, setDocumentType] = useState("ID_CARD");
 
@@ -1006,6 +1010,23 @@ function Documents({ api, runAction, userContext, currentEmployeeId }) {
     }, "Document permanently deleted from the secure vault.");
   }
 
+  // 🌟 SECURE FILE VIEWER
+  async function viewDoc(docId) {
+    const url = `${API_BASE_URL}/api/v1/documents/${docId}/download`;
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error("Could not load file.");
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank');
+    } catch (e) {
+      alert("Failed to view document: " + e.message);
+    }
+  }
+
   return (
       <Page title="Document Compliance Center" subtitle="Secure vault for identity verification and corporate record tracking.">
         {userContext?.isEmployee ? (
@@ -1030,7 +1051,11 @@ function Documents({ api, runAction, userContext, currentEmployeeId }) {
                           <span className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${doc.verified ? "bg-brand text-white" : "bg-gold/20 text-gold"}`}>
                         {doc.verified ? "APPROVED" : "PENDING"}
                       </span>,
-                          <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral border border-coral/20 rounded-md hover:bg-coral/20 font-semibold" onClick={() => deleteMyDoc(doc.id)}>Delete</button>
+                          <div className="flex gap-1.5" key={doc.id}>
+                            {/* 🌟 Employee View Button */}
+                            <button className="btn min-h-8 px-2.5 py-1 text-xs bg-panel border border-line rounded-md hover:bg-line font-semibold" onClick={() => viewDoc(doc.id)}>View</button>
+                            <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral border border-coral/20 rounded-md hover:bg-coral/20 font-semibold" onClick={() => deleteMyDoc(doc.id)}>Delete</button>
+                          </div>
                         ])}
                     />
                 ) : <Empty text="You have not uploaded any records yet." />}
@@ -1046,6 +1071,8 @@ function Documents({ api, runAction, userContext, currentEmployeeId }) {
                         <Badge value={doc.documentType} />,
                         doc.fileName,
                         <div className="flex gap-1.5" key={doc.id}>
+                          {/* 🌟 Admin View Button */}
+                          <button className="btn min-h-8 px-2.5 py-1 text-xs bg-panel border border-line rounded-md hover:bg-line font-semibold" onClick={() => viewDoc(doc.id)}>View</button>
                           <button className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold" onClick={() => verifyDoc(doc.id, true)}>Approve</button>
                           <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral border border-coral/20 rounded-md hover:bg-coral/20 font-semibold" onClick={() => verifyDoc(doc.id, false)}>Reject</button>
                         </div>
