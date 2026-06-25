@@ -52,6 +52,20 @@ function App() {
   const [attendanceMetrics, setAttendanceMetrics] = useState(null);
   const [insights, setInsights] = useState([]);
 
+  // 🌟 NEW: State for unauthenticated routing
+  const [authView, setAuthView] = useState("login"); // "login", "forgot", "reset"
+  const [resetToken, setResetToken] = useState("");
+
+  // 🌟 NEW: Check URL for reset token on load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
+    if (urlToken && !token) {
+      setResetToken(urlToken);
+      setAuthView("reset");
+    }
+  }, [token]);
+
   const userContext = useMemo(() => {
     if (!token) return null;
     const payload = parseJwt(token);
@@ -98,6 +112,7 @@ function App() {
     setEmployees([]);
     setInsights([]);
     setActive("dashboard");
+    setAuthView("login");
   }
 
   async function runAction(action, successText) {
@@ -157,8 +172,22 @@ function App() {
     refreshBaseData();
   }, [token, userContext]);
 
+  // 🌟 NEW: Unauthenticated Route Handling
   if (!token) {
-    return <LoginScreen onLogin={handleToken} />;
+    if (authView === "forgot") {
+      return <ForgotPasswordScreen onBack={() => setAuthView("login")} />;
+    }
+    if (authView === "reset") {
+      return <ResetPasswordScreen
+          resetToken={resetToken}
+          onDone={() => {
+            setAuthView("login");
+            // Clean up the URL after successful reset
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }}
+      />;
+    }
+    return <LoginScreen onLogin={handleToken} onForgotPassword={() => setAuthView("forgot")} />;
   }
 
   return (
@@ -212,7 +241,6 @@ function App() {
           </header>
 
           <main>
-            {/* 🌟 FIXED: Passing api and runAction explicitly to Dashboard for the AI search tool */}
             {active === "dashboard" && <Dashboard metrics={metrics} attendanceMetrics={attendanceMetrics} onLoadAttendance={refreshAttendanceDashboard} userContext={userContext} api={api} runAction={runAction} />}
             {active === "employees" && !userContext?.isEmployee && <Employees api={api} employees={employees} refresh={refreshBaseData} runAction={runAction} userContext={userContext} />}
             {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
@@ -226,7 +254,7 @@ function App() {
   );
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onForgotPassword }) {
   const [email, setEmail] = useState("admin@nexushr.local");
   const [password, setPassword] = useState("ChangeMe123!");
   const [error, setError] = useState("");
@@ -261,7 +289,11 @@ function LoginScreen({ onLogin }) {
             <Field label="Email">
               <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </Field>
-            <Field label="Password">
+            {/* 🌟 FIXED: Added action link to the password field */}
+            <Field
+                label="Password"
+                action={<button type="button" onClick={onForgotPassword} className="text-xs font-semibold text-brand hover:underline">Forgot password?</button>}
+            >
               <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </Field>
           </div>
@@ -278,13 +310,113 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+// 🌟 NEW: Forgot Password Screen
+function ForgotPasswordScreen({ onBack }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await parseResponse(response);
+      setStatus({ type: "success", text: data.message || "If that email exists, a reset link has been sent." });
+    } catch (err) {
+      setStatus({ type: "error", text: err.message || "An error occurred." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+      <main className="grid min-h-screen place-items-center bg-panel px-4">
+        <div className="w-full max-w-md rounded-lg border border-line bg-white p-6 shadow-soft">
+          <h1 className="text-2xl font-bold text-ink">Reset Password</h1>
+          <p className="mt-2 text-sm text-muted mb-6">Enter your NexusHR work email and we'll send you a link to reset your password.</p>
+
+          {status.type === "success" ? (
+              <div className="p-4 mb-6 rounded-md border border-brand/20 bg-brand/5 text-sm font-medium text-brand">
+                {status.text}
+              </div>
+          ) : (
+              <form onSubmit={submit} className="space-y-4">
+                <Field label="Work Email">
+                  <input className="field" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                </Field>
+                {status.type === "error" && <p className="rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{status.text}</p>}
+                <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Sending..." : "Send Reset Link"}</button>
+              </form>
+          )}
+          <div className="mt-6 text-center">
+            <button type="button" onClick={onBack} className="text-sm font-semibold text-brand hover:underline">Back to Sign In</button>
+          </div>
+        </div>
+      </main>
+  );
+}
+
+// 🌟 NEW: Reset Password Screen (Uses Token)
+function ResetPasswordScreen({ resetToken, onDone }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: resetToken, newPassword })
+      });
+      const data = await parseResponse(response);
+      setStatus({ type: "success", text: data.message || "Password successfully reset!" });
+      setTimeout(onDone, 2500); // Send back to login after 2.5s
+    } catch (err) {
+      setStatus({ type: "error", text: err.message || "Invalid or expired token." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+      <main className="grid min-h-screen place-items-center bg-panel px-4">
+        <div className="w-full max-w-md rounded-lg border border-line bg-white p-6 shadow-soft">
+          <h1 className="text-2xl font-bold text-ink">Create New Password</h1>
+          <p className="mt-2 text-sm text-muted mb-6">Please enter your new secure credentials below.</p>
+
+          {status.type === "success" ? (
+              <div className="p-4 mb-6 rounded-md border border-brand/20 bg-brand/5 text-sm font-medium text-brand text-center">
+                {status.text}<br />Redirecting to sign in...
+              </div>
+          ) : (
+              <form onSubmit={submit} className="space-y-4">
+                <Field label="New Password">
+                  <input className="field" type="password" minLength="8" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+                </Field>
+                {status.type === "error" && <p className="rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{status.text}</p>}
+                <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Updating..." : "Save Password"}</button>
+              </form>
+          )}
+        </div>
+      </main>
+  );
+}
+
 function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, api, runAction }) {
-  // 🌟 NEW: AI State variables
   const [aiQuery, setAiQuery] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [asking, setAsking] = useState(false);
 
-  // 🌟 NEW: AI Query Execution Function
   async function askAi(event) {
     event.preventDefault();
     setAsking(true);
@@ -310,7 +442,6 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, 
   return (
       <Page title={userContext?.isEmployee ? "My Employee Dashboard" : "Executive Dashboard"} subtitle={userContext?.isEmployee ? "Personal workforce track summaries." : "Global executive oversight matrix indicators."}>
 
-        {/* 🌟 NEW: AI HR Assistant Search Panel */}
         {!userContext?.isEmployee && (
             <Panel title="✨ Ask Nexus AI">
               <form className="flex flex-col gap-3 sm:flex-row" onSubmit={askAi}>
@@ -530,7 +661,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     }, `Leave context has been updated to ${statusString}`);
   }
 
-  // 🌟 NEW: Punch IN / Punch OUT tracking handler
   async function punch(type) {
     await runAction(async () => {
       await api.post("/api/v1/attendance/biometric-punch", {
@@ -576,7 +706,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
                   </div>
               )}
 
-              {/* 🌟 NEW: Split buttons for Punch IN and Punch OUT */}
               <div className="flex gap-2">
                 <button className="btn btn-primary flex-1" onClick={() => punch('IN')} disabled={!employeeId}>
                   Punch IN
@@ -890,7 +1019,20 @@ function Page({ title, subtitle, children }) {
 function Panel({ title, action, children }) { return ( <section className="rounded-lg border border-line bg-white shadow-sm"> <div className="flex min-h-14 items-center justify-between gap-3 border-b border-line px-4 py-3"> <h3 className="text-base font-bold text-ink">{title}</h3> {action} </div> <div className="p-4">{children}</div> </section> ); }
 function Stat({ label, value }) { return ( <div className="rounded-lg border border-line bg-white p-4 shadow-sm"> <p className="text-sm font-medium text-muted">{label}</p> <p className="mt-2 text-3xl font-bold text-ink">{value}</p> </div> ); }
 function DataTable({ columns, rows }) { if (!rows.length) return <Empty text="No records found." />; return ( <div className="overflow-x-auto"> <table className="min-w-full border-separate border-spacing-0 text-left text-sm"> <thead> <tr> {columns.map((column) => ( <th key={column} className="border-b border-line bg-panel px-3 py-2 text-xs font-semibold uppercase text-muted">{column}</th> ))} </tr> </thead> <tbody> {rows.map((row, rowIndex) => ( <tr key={rowIndex}> {row.map((cell, cellIndex) => ( <td key={cellIndex} className="border-b border-line px-3 py-3 align-top text-ink">{cell}</td> ))} </tr> ))} </tbody> </table> </div> ); }
-function Field({ label, children }) { return ( <label className="block"> <span className="label mb-1 block">{label}</span> {children} </label> ); }
+
+// 🌟 FIXED: Updated Field to accept an 'action' prop (like a forgot password link) in the header
+function Field({ label, action, children }) {
+  return (
+      <label className="block">
+        <div className="flex justify-between items-center mb-1">
+          <span className="label block">{label}</span>
+          {action}
+        </div>
+        {children}
+      </label>
+  );
+}
+
 function Input({ label, value, onChange, type = "text", ...props }) { return ( <Field label={label}> <input className="field" type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} {...props} /> </Field> ); }
 function Select({ label, value, onChange, options }) { return ( <Field label={label}> <select className="field" value={value} onChange={(event) => onChange(event.target.value)}> {options.map((option) => <option key={option} value={option}>{option}</option>)} </select> </Field> ); }
 
