@@ -9,6 +9,7 @@ const navItems = [
   { id: "attendance", label: "Attendance", mark: "A" },
   { id: "payroll", label: "Payroll", mark: "P" },
   { id: "performance", label: "Performance", mark: "R" },
+  { id: "documents", label: "Documents", mark: "📄" }, // 🌟 NEW TAB
   { id: "insights", label: "Insights", mark: "I", adminOnly: true },
   { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
 ];
@@ -52,11 +53,11 @@ function App() {
   const [attendanceMetrics, setAttendanceMetrics] = useState(null);
   const [insights, setInsights] = useState([]);
 
-  // 🌟 NEW: State for unauthenticated routing
+  // Unauthenticated routing
   const [authView, setAuthView] = useState("login"); // "login", "forgot", "reset"
   const [resetToken, setResetToken] = useState("");
 
-  // 🌟 NEW: Check URL for reset token on load
+  // Check URL for reset token on load
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get("token");
@@ -172,7 +173,7 @@ function App() {
     refreshBaseData();
   }, [token, userContext]);
 
-  // 🌟 NEW: Unauthenticated Route Handling
+  // Unauthenticated Route Handling
   if (!token) {
     if (authView === "forgot") {
       return <ForgotPasswordScreen onBack={() => setAuthView("login")} />;
@@ -246,6 +247,7 @@ function App() {
             {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
             {active === "payroll" && <Payroll api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
             {active === "performance" && <Performance api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
+            {active === "documents" && <Documents api={api} runAction={runAction} userContext={userContext} currentEmployeeId={currentEmployeeId} />}
             {active === "insights" && !userContext?.isEmployee && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
             {active === "notifications" && !userContext?.isEmployee && <Notifications api={api} runAction={runAction} />}
           </main>
@@ -289,7 +291,6 @@ function LoginScreen({ onLogin, onForgotPassword }) {
             <Field label="Email">
               <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </Field>
-            {/* 🌟 FIXED: Added action link to the password field */}
             <Field
                 label="Password"
                 action={<button type="button" onClick={onForgotPassword} className="text-xs font-semibold text-brand hover:underline">Forgot password?</button>}
@@ -310,7 +311,6 @@ function LoginScreen({ onLogin, onForgotPassword }) {
   );
 }
 
-// 🌟 NEW: Forgot Password Screen
 function ForgotPasswordScreen({ onBack }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("");
@@ -362,7 +362,6 @@ function ForgotPasswordScreen({ onBack }) {
   );
 }
 
-// 🌟 NEW: Reset Password Screen (Uses Token)
 function ResetPasswordScreen({ resetToken, onDone }) {
   const [newPassword, setNewPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -380,7 +379,7 @@ function ResetPasswordScreen({ resetToken, onDone }) {
       });
       const data = await parseResponse(response);
       setStatus({ type: "success", text: data.message || "Password successfully reset!" });
-      setTimeout(onDone, 2500); // Send back to login after 2.5s
+      setTimeout(onDone, 2500);
     } catch (err) {
       setStatus({ type: "error", text: err.message || "Invalid or expired token." });
     } finally {
@@ -947,6 +946,80 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
   );
 }
 
+function Documents({ api, runAction, userContext, currentEmployeeId }) {
+  const [file, setFile] = useState(null);
+  const [documentType, setDocumentType] = useState("ID_CARD");
+  const [pendingDocs, setPendingDocs] = useState([]);
+
+  async function loadPending() {
+    if (userContext?.isEmployee) return;
+    await runAction(async () => {
+      setPendingDocs(await api.get("/api/v1/documents/pending"));
+    });
+  }
+
+  useEffect(() => {
+    loadPending();
+  }, [userContext]);
+
+  async function upload(event) {
+    event.preventDefault();
+    if (!file) return alert("Please select a file to upload.");
+    if (!currentEmployeeId) return alert("System error: Missing Employee ID context.");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("documentType", documentType);
+    formData.append("employeeId", currentEmployeeId);
+
+    await runAction(async () => {
+      await api.post("/api/v1/documents/upload", formData, true);
+      setFile(null);
+      document.getElementById("file-upload-input").value = "";
+    }, "Document uploaded successfully. Awaiting management review.");
+  }
+
+  async function verifyDoc(id, isVerified) {
+    await runAction(async () => {
+      await api.patch(`/api/v1/documents/${id}/verify?verified=${isVerified}`);
+      await loadPending();
+    }, `Document status successfully updated to ${isVerified ? "Approved" : "Rejected"}.`);
+  }
+
+  return (
+      <Page title="Document Compliance Center" subtitle="Secure vault for identity verification and corporate record tracking.">
+        {userContext?.isEmployee ? (
+            <Panel title="Submit New Record">
+              <form className="grid gap-4 sm:grid-cols-2" onSubmit={upload}>
+                <Select label="Document Category" value={documentType} onChange={setDocumentType} options={["ID_CARD", "PASSPORT", "TAX_FORM", "CERTIFICATION", "OFFER_LETTER"]} />
+                <Field label="Target File">
+                  <input id="file-upload-input" type="file" className="field pt-1.5 cursor-pointer file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand/10 file:text-brand hover:file:bg-brand/20" onChange={(e) => setFile(e.target.files[0])} required />
+                </Field>
+                <button className="btn btn-primary sm:col-span-2">Upload and Request Approval</button>
+              </form>
+            </Panel>
+        ) : (
+            <Panel title="Pending Verification Queue" action={<button className="btn btn-secondary" onClick={loadPending}>Refresh Queue</button>}>
+              {pendingDocs.length ? (
+                  <DataTable
+                      columns={["Owner ID", "Type", "File Name", "Actions"]}
+                      rows={pendingDocs.map(doc => [
+                        <span className="font-mono text-xs">{shortId(doc.employeeId)}</span>,
+                        <Badge value={doc.documentType} />,
+                        doc.fileName,
+                        <div className="flex gap-1.5" key={doc.id}>
+                          <button className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold" onClick={() => verifyDoc(doc.id, true)}>Approve</button>
+                          <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral border border-coral/20 rounded-md hover:bg-coral/20 font-semibold" onClick={() => verifyDoc(doc.id, false)}>Reject</button>
+                        </div>
+                      ])}
+                  />
+              ) : <Empty text="Zero items in the queue. All compliance checks complete." />}
+            </Panel>
+        )}
+      </Page>
+  );
+}
+
 function Insights({ api, insights, selectedEmployee, refresh, runAction }) {
   const [employeeId, setEmployeeId] = useState(selectedEmployee);
   const [employeeInsight, setEmployeeInsight] = useState(null);
@@ -1020,7 +1093,6 @@ function Panel({ title, action, children }) { return ( <section className="round
 function Stat({ label, value }) { return ( <div className="rounded-lg border border-line bg-white p-4 shadow-sm"> <p className="text-sm font-medium text-muted">{label}</p> <p className="mt-2 text-3xl font-bold text-ink">{value}</p> </div> ); }
 function DataTable({ columns, rows }) { if (!rows.length) return <Empty text="No records found." />; return ( <div className="overflow-x-auto"> <table className="min-w-full border-separate border-spacing-0 text-left text-sm"> <thead> <tr> {columns.map((column) => ( <th key={column} className="border-b border-line bg-panel px-3 py-2 text-xs font-semibold uppercase text-muted">{column}</th> ))} </tr> </thead> <tbody> {rows.map((row, rowIndex) => ( <tr key={rowIndex}> {row.map((cell, cellIndex) => ( <td key={cellIndex} className="border-b border-line px-3 py-3 align-top text-ink">{cell}</td> ))} </tr> ))} </tbody> </table> </div> ); }
 
-// 🌟 FIXED: Updated Field to accept an 'action' prop (like a forgot password link) in the header
 function Field({ label, action, children }) {
   return (
       <label className="block">
@@ -1056,24 +1128,28 @@ function Empty({ text }) { return <p className="rounded-md border border-dashed 
 function InsightCard({ insight }) { return ( <div className="rounded-lg border border-line bg-panel p-4"> <p className="text-xs font-semibold uppercase text-muted">{shortId(insight.employeeId)}</p> <div className="mt-3 grid grid-cols-2 gap-2"> <Stat label="Attrition risk" value={formatPercent(insight.attritionRisk)} /> <Stat label="Engagement" value={formatPercent(insight.engagementScore)} /> </div> <p className="mt-4 text-sm font-semibold text-ink">Skill gaps</p> <p className="mt-1 text-sm text-muted">{(insight.skillGaps || []).join(", ") || "-"}</p> <p className="mt-4 text-sm font-semibold text-ink">Recommendations</p> <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted"> {(insight.recommendations || ["No recommendations"]).map((item) => <li key={item}>{item}</li>)} </ul> </div> ); }
 
 function createApi(token) {
-  async function request(method, path, body) {
+  async function request(method, path, body, isFormData = false) {
     const absolutePath = `${API_BASE_URL}${path}`;
+    const headers = { Authorization: `Bearer ${token}` };
+
+    if (!isFormData) {
+      headers["Content-Type"] = "application/json";
+    }
+
     const response = await fetch(absolutePath, {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`
-      },
-      body: body === undefined ? undefined : JSON.stringify(body)
+      headers,
+      body: isFormData ? body : (body === undefined ? undefined : JSON.stringify(body))
     });
     return parseResponse(response);
   }
 
   return {
     get: (path) => request("GET", path),
-    post: (path, body) => request("POST", path, body),
+    post: (path, body, isFormData) => request("POST", path, body, isFormData),
     put: (path, body) => request("PUT", path, body),
-    request: (method, path, body) => request(method, path, body)
+    patch: (path, body) => request("PATCH", path, body),
+    request: (method, path, body, isFormData) => request(method, path, body, isFormData)
   };
 }
 
