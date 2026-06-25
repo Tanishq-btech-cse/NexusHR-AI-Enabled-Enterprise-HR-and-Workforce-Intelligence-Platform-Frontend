@@ -9,7 +9,7 @@ const navItems = [
   { id: "attendance", label: "Attendance", mark: "A" },
   { id: "payroll", label: "Payroll", mark: "P" },
   { id: "performance", label: "Performance", mark: "R" },
-  { id: "documents", label: "Documents", mark: "📄" }, // 🌟 NEW TAB
+  { id: "documents", label: "Documents", mark: "📄" },
   { id: "insights", label: "Insights", mark: "I", adminOnly: true },
   { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
 ];
@@ -949,7 +949,9 @@ function Performance({ api, selectedEmployee, runAction, userContext }) {
 function Documents({ api, runAction, userContext, currentEmployeeId }) {
   const [file, setFile] = useState(null);
   const [documentType, setDocumentType] = useState("ID_CARD");
+
   const [pendingDocs, setPendingDocs] = useState([]);
+  const [myDocs, setMyDocs] = useState([]);
 
   async function loadPending() {
     if (userContext?.isEmployee) return;
@@ -958,9 +960,17 @@ function Documents({ api, runAction, userContext, currentEmployeeId }) {
     });
   }
 
+  async function loadMyDocs() {
+    if (!userContext?.isEmployee || !currentEmployeeId) return;
+    await runAction(async () => {
+      setMyDocs(await api.get(`/api/v1/documents/me?employeeId=${currentEmployeeId}`));
+    });
+  }
+
   useEffect(() => {
     loadPending();
-  }, [userContext]);
+    loadMyDocs();
+  }, [userContext, currentEmployeeId]);
 
   async function upload(event) {
     event.preventDefault();
@@ -976,6 +986,7 @@ function Documents({ api, runAction, userContext, currentEmployeeId }) {
       await api.post("/api/v1/documents/upload", formData, true);
       setFile(null);
       document.getElementById("file-upload-input").value = "";
+      await loadMyDocs();
     }, "Document uploaded successfully. Awaiting management review.");
   }
 
@@ -986,18 +997,45 @@ function Documents({ api, runAction, userContext, currentEmployeeId }) {
     }, `Document status successfully updated to ${isVerified ? "Approved" : "Rejected"}.`);
   }
 
+  async function deleteMyDoc(docId) {
+    if (!window.confirm("Are you sure you want to permanently delete this document?")) return;
+
+    await runAction(async () => {
+      await api.request("DELETE", `/api/v1/documents/${docId}?employeeId=${currentEmployeeId}`);
+      await loadMyDocs();
+    }, "Document permanently deleted from the secure vault.");
+  }
+
   return (
       <Page title="Document Compliance Center" subtitle="Secure vault for identity verification and corporate record tracking.">
         {userContext?.isEmployee ? (
-            <Panel title="Submit New Record">
-              <form className="grid gap-4 sm:grid-cols-2" onSubmit={upload}>
-                <Select label="Document Category" value={documentType} onChange={setDocumentType} options={["ID_CARD", "PASSPORT", "TAX_FORM", "CERTIFICATION", "OFFER_LETTER"]} />
-                <Field label="Target File">
-                  <input id="file-upload-input" type="file" className="field pt-1.5 cursor-pointer file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand/10 file:text-brand hover:file:bg-brand/20" onChange={(e) => setFile(e.target.files[0])} required />
-                </Field>
-                <button className="btn btn-primary sm:col-span-2">Upload and Request Approval</button>
-              </form>
-            </Panel>
+            <div className="grid gap-6">
+              <Panel title="Submit New Record">
+                <form className="grid gap-4 sm:grid-cols-2" onSubmit={upload}>
+                  <Select label="Document Category" value={documentType} onChange={setDocumentType} options={["ID_CARD", "PASSPORT", "TAX_FORM", "CERTIFICATION", "OFFER_LETTER"]} />
+                  <Field label="Target File">
+                    <input id="file-upload-input" type="file" className="field pt-1.5 cursor-pointer file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand/10 file:text-brand hover:file:bg-brand/20" onChange={(e) => setFile(e.target.files[0])} required />
+                  </Field>
+                  <button className="btn btn-primary sm:col-span-2">Upload and Request Approval</button>
+                </form>
+              </Panel>
+
+              <Panel title="My Uploaded Records" action={<button className="btn btn-secondary" onClick={loadMyDocs}>Refresh</button>}>
+                {myDocs.length ? (
+                    <DataTable
+                        columns={["Type", "File Name", "Status", "Actions"]}
+                        rows={myDocs.map(doc => [
+                          <Badge value={doc.documentType} />,
+                          doc.fileName,
+                          <span className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${doc.verified ? "bg-brand text-white" : "bg-gold/20 text-gold"}`}>
+                        {doc.verified ? "APPROVED" : "PENDING"}
+                      </span>,
+                          <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral border border-coral/20 rounded-md hover:bg-coral/20 font-semibold" onClick={() => deleteMyDoc(doc.id)}>Delete</button>
+                        ])}
+                    />
+                ) : <Empty text="You have not uploaded any records yet." />}
+              </Panel>
+            </div>
         ) : (
             <Panel title="Pending Verification Queue" action={<button className="btn btn-secondary" onClick={loadPending}>Refresh Queue</button>}>
               {pendingDocs.length ? (
