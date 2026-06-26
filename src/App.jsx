@@ -4,15 +4,15 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 const TOKEN_KEY = "nexushr_access_token";
 
 const navItems = [
-    { id: "dashboard", label: "Dashboard", mark: "D" },
-    { id: "employees", label: "Employees", mark: "E", adminOnly: true },
-    { id: "attendance", label: "Attendance", mark: "A" },
-    { id: "payroll", label: "Payroll", mark: "P" },
-    { id: "performance", label: "Performance", mark: "R" },
+    { id: "dashboard", label: "Dashboard", mark: "🏠" },
+    { id: "employees", label: "Employees", mark: "🚻", adminOnly: true },
+    { id: "attendance", label: "Attendance", mark: "🗒️" },
+    { id: "payroll", label: "Payroll", mark: "💰" },
+    { id: "performance", label: "Performance", mark: "🎖️" },
     { id: "documents", label: "Documents", mark: "📄" },
     { id: "recruitment", label: "Recruitment", mark: "🎯", adminOnly: true },
     { id: "insights", label: "Insights", mark: "I", adminOnly: true },
-    { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
+    { id: "notifications", label: "Notifications", mark: "🔔", adminOnly: true }
 ];
 
 const defaultEmployee = {
