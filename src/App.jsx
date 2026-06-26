@@ -441,8 +441,35 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, 
         ["Notification success", formatPercent(metrics?.notificationSuccessRate)]
     ];
 
+    // 🌟 DYNAMIC ROLE-BASED TITLES
+    let dashboardTitle = "Dashboard";
+    let dashboardSubtitle = "System overview.";
+
+    if (userContext?.roles) {
+        // Strip "ROLE_" prefix if it exists to make matching easier
+        const roles = userContext.roles.map(r => r.replace("ROLE_", ""));
+
+        // Priority hierarchy for users with multiple roles
+        if (roles.includes("ADMIN")) {
+            dashboardTitle = "Admin Dashboard";
+            dashboardSubtitle = "Global administrative control and system metrics.";
+        } else if (roles.includes("HR")) {
+            dashboardTitle = "HR Dashboard";
+            dashboardSubtitle = "Human resources overview and compliance tracking.";
+        } else if (roles.includes("MANAGER")) {
+            dashboardTitle = "Manager Dashboard";
+            dashboardSubtitle = "Team performance and attendance metrics.";
+        } else if (roles.includes("PAYROLL")) {
+            dashboardTitle = "Payroll Dashboard";
+            dashboardSubtitle = "Compensation matrices and financial summaries.";
+        } else {
+            dashboardTitle = "My Employee Dashboard";
+            dashboardSubtitle = "Personal workforce track summaries.";
+        }
+    }
+
     return (
-        <Page title={userContext?.isEmployee ? "My Employee Dashboard" : "Executive Dashboard"} subtitle={userContext?.isEmployee ? "Personal workforce track summaries." : "Global executive oversight matrix indicators."}>
+        <Page title={dashboardTitle} subtitle={dashboardSubtitle}>
 
             {!userContext?.isEmployee && (
                 <Panel title="✨ Ask Nexus AI">
