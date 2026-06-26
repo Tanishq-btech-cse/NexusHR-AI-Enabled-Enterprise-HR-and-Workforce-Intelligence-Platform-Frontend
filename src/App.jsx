@@ -10,6 +10,8 @@ const navItems = [
     { id: "payroll", label: "Payroll", mark: "P" },
     { id: "performance", label: "Performance", mark: "R" },
     { id: "documents", label: "Documents", mark: "📄" },
+    // 🌟 Added Recruitment Tab for HR/Admin
+    { id: "recruitment", label: "Recruitment", mark: "🎯", adminOnly: true },
     { id: "insights", label: "Insights", mark: "I", adminOnly: true },
     { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
 ];
@@ -250,6 +252,9 @@ function App() {
 
                     {/* 🌟 Document component with the passed token */}
                     {active === "documents" && <Documents api={api} runAction={runAction} userContext={userContext} currentEmployeeId={currentEmployeeId} token={token} />}
+
+                    {/* 🌟 RECRUITMENT ROUTE ADDED HERE */}
+                    {active === "recruitment" && !userContext?.isEmployee && <Recruitment api={api} runAction={runAction} />}
 
                     {active === "insights" && !userContext?.isEmployee && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
                     {active === "notifications" && !userContext?.isEmployee && <Notifications api={api} runAction={runAction} />}
@@ -1187,6 +1192,66 @@ function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
                     ) : <Empty text="Zero items in the queue. All compliance checks complete." />}
                 </Panel>
             )}
+        </Page>
+    );
+}
+
+// 🌟 RECRUITMENT COMPONENT FOR HR
+function Recruitment({ api, runAction }) {
+    const [candidates, setCandidates] = useState([]);
+
+    async function loadCandidates() {
+        await runAction(async () => {
+            setCandidates(await api.get("/api/v1/recruitment/candidates"));
+        });
+    }
+
+    useEffect(() => {
+        loadCandidates();
+    }, []);
+
+    async function updateStatus(id, newStatus) {
+        await runAction(async () => {
+            await api.patch(`/api/v1/recruitment/candidates/${id}/status`, { status: newStatus });
+            await loadCandidates();
+        }, `Candidate moved to ${newStatus}`);
+    }
+
+    return (
+        <Page title="Applicant Tracking System" subtitle="Manage incoming applications and coordinate interviews.">
+            <Panel title="Candidate Pipeline" action={<button className="btn btn-secondary" onClick={loadCandidates}>Refresh</button>}>
+                {candidates.length ? (
+                    <DataTable
+                        columns={["Name", "Email", "Target Role", "Applied", "Status", "Actions"]}
+                        rows={candidates.map(c => [
+                            <span className="font-semibold">{c.name}</span>,
+                            c.email,
+                            c.targetRole,
+                            c.appliedDate,
+                            <Badge value={c.status} />,
+                            <div className="flex gap-1.5" key={c.id}>
+                                <button
+                                    className="btn min-h-8 px-2.5 py-1 text-xs bg-brand/10 text-brand hover:bg-brand/20 rounded-md font-semibold"
+                                    onClick={() => updateStatus(c.id, "INTERVIEWING")}>
+                                    Interview
+                                </button>
+                                <button
+                                    className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold"
+                                    onClick={() => updateStatus(c.id, "HIRED")}>
+                                    Hire
+                                </button>
+                                <button
+                                    className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral hover:bg-coral/20 rounded-md font-semibold"
+                                    onClick={() => updateStatus(c.id, "REJECTED")}>
+                                    Reject
+                                </button>
+                            </div>
+                        ])}
+                    />
+                ) : (
+                    <Empty text="No candidates have applied yet. Send a POST request to /api/v1/recruitment/apply to test." />
+                )}
+            </Panel>
         </Page>
     );
 }
