@@ -54,11 +54,9 @@ function App() {
     const [attendanceMetrics, setAttendanceMetrics] = useState(null);
     const [insights, setInsights] = useState([]);
 
-    // 🌟 Added "careers" to unauthenticated views
-    const [authView, setAuthView] = useState("login"); // "login", "forgot", "reset", "careers"
+    const [authView, setAuthView] = useState("login");
     const [resetToken, setResetToken] = useState("");
 
-    // Check URL for reset token on load
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const urlToken = params.get("token");
@@ -174,7 +172,6 @@ function App() {
         refreshBaseData();
     }, [token, userContext]);
 
-    // Unauthenticated Route Handling
     if (!token) {
         if (authView === "forgot") {
             return <ForgotPasswordScreen onBack={() => setAuthView("login")} />;
@@ -188,12 +185,10 @@ function App() {
                 }}
             />;
         }
-        // 🌟 NEW CAREERS ROUTE
         if (authView === "careers") {
             return <CareersScreen onBack={() => setAuthView("login")} />;
         }
 
-        // Pass onCareers prop to LoginScreen
         return <LoginScreen onLogin={handleToken} onForgotPassword={() => setAuthView("forgot")} onCareers={() => setAuthView("careers")} />;
     }
 
@@ -263,7 +258,6 @@ function App() {
     );
 }
 
-// 🌟 NEW CAREERS SCREEN COMPONENT
 function CareersScreen({ onBack }) {
     const [form, setForm] = useState({ name: "", email: "", targetRole: "Software Engineer" });
     const [status, setStatus] = useState("");
@@ -274,7 +268,6 @@ function CareersScreen({ onBack }) {
         setBusy(true);
         setStatus("");
         try {
-            // Sends public POST request directly to the backend
             const response = await fetch(`${API_BASE_URL}/api/v1/recruitment/apply`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -282,7 +275,7 @@ function CareersScreen({ onBack }) {
             });
             await parseResponse(response);
             setStatus({ type: "success", text: "Application submitted successfully! Our HR team will review it shortly." });
-            setForm({ name: "", email: "", targetRole: "Software Engineer" }); // clear form
+            setForm({ name: "", email: "", targetRole: "Software Engineer" });
         } catch (err) {
             setStatus({ type: "error", text: err.message || "An error occurred submitting your application." });
         } finally {
@@ -400,7 +393,6 @@ function LoginScreen({ onLogin, onForgotPassword, onCareers }) {
                     <button className="btn btn-primary mt-6 w-full" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button>
                 </form>
 
-                {/* 🌟 LINK TO PUBLIC CAREERS SITE ADDED BELOW LOGIN FORM */}
                 <div className="mt-6 text-center">
                     <p className="text-sm text-muted">
                         Looking to join our team?{" "}
