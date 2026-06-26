@@ -254,7 +254,7 @@ function App() {
                     {active === "documents" && <Documents api={api} runAction={runAction} userContext={userContext} currentEmployeeId={currentEmployeeId} token={token} />}
 
                     {/* 🌟 RECRUITMENT ROUTE ADDED HERE */}
-                    {active === "recruitment" && !userContext?.isEmployee && <Recruitment api={api} runAction={runAction} />}
+                    {active === "recruitment" && !userContext?.isEmployee && <Recruitment api={api} runAction={runAction} userContext={userContext} />}
 
                     {active === "insights" && !userContext?.isEmployee && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
                     {active === "notifications" && !userContext?.isEmployee && <Notifications api={api} runAction={runAction} />}
@@ -1196,9 +1196,46 @@ function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
     );
 }
 
-// 🌟 RECRUITMENT COMPONENT FOR HR
-function Recruitment({ api, runAction }) {
+// 🌟 NEW: SECURE VIDEO INTERVIEW ROOM COMPONENT
+function VideoMeeting({ candidate, onClose, userContext }) {
+    // Generate a unique, unguessable room ID using the candidate's UUID
+    const roomName = `NexusHR-Interview-${candidate.id}`;
+    const domain = "meet.jit.si";
+
+    return (
+        <div className="fixed inset-0 z-50 bg-panel flex flex-col">
+            <div className="flex items-center justify-between bg-white border-b border-line px-6 py-3 shadow-sm">
+                <div>
+                    <h2 className="text-lg font-bold text-ink">Active Interview: {candidate.name}</h2>
+                    <p className="text-xs font-semibold text-brand">Target Role: {candidate.targetRole}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                    <p className="text-xs text-muted">
+                        Share this link with candidate: <br/>
+                        <code className="bg-panel px-1 py-0.5 rounded select-all">https://{domain}/{roomName}</code>
+                    </p>
+                    <button className="btn min-h-8 px-4 py-2 text-sm bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-bold" onClick={onClose}>
+                        End Interview
+                    </button>
+                </div>
+            </div>
+            <div className="flex-1 bg-ink">
+                {/* Embed Open-Source Jitsi Video Conf */}
+                <iframe
+                    src={`https://${domain}/${roomName}?userInfo.displayName="${userContext?.email}"`}
+                    allow="camera; microphone; fullscreen; display-capture; autoplay"
+                    style={{ width: '100%', height: '100%', border: 'none' }}
+                    title="Interview Room"
+                />
+            </div>
+        </div>
+    );
+}
+
+// 🌟 UPDATED: RECRUITMENT COMPONENT FOR HR
+function Recruitment({ api, runAction, userContext }) {
     const [candidates, setCandidates] = useState([]);
+    const [activeMeeting, setActiveMeeting] = useState(null);
 
     async function loadCandidates() {
         await runAction(async () => {
@@ -1217,6 +1254,11 @@ function Recruitment({ api, runAction }) {
         }, `Candidate moved to ${newStatus}`);
     }
 
+    // If an interview is active, hijack the screen with the video caller
+    if (activeMeeting) {
+        return <VideoMeeting candidate={activeMeeting} onClose={() => setActiveMeeting(null)} userContext={userContext} />;
+    }
+
     return (
         <Page title="Applicant Tracking System" subtitle="Manage incoming applications and coordinate interviews.">
             <Panel title="Candidate Pipeline" action={<button className="btn btn-secondary" onClick={loadCandidates}>Refresh</button>}>
@@ -1224,19 +1266,30 @@ function Recruitment({ api, runAction }) {
                     <DataTable
                         columns={["Name", "Email", "Target Role", "Applied", "Status", "Actions"]}
                         rows={candidates.map(c => [
-                            <span className="font-semibold">{c.name}</span>,
+                            <span className="font-semibold" key={`name-${c.id}`}>{c.name}</span>,
                             c.email,
                             c.targetRole,
                             c.appliedDate,
-                            <Badge value={c.status} />,
+                            <Badge value={c.status} key={`badge-${c.id}`}/>,
                             <div className="flex gap-1.5" key={c.id}>
+
+                                {/* 🌟 DYNAMIC BUTTON: Switch between Scheduling and Calling */}
+                                {c.status === "INTERVIEWING" ? (
+                                    <button
+                                        className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold flex items-center gap-1 shadow-sm"
+                                        onClick={() => setActiveMeeting(c)}>
+                                        🎥 Join Call
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="btn min-h-8 px-2.5 py-1 text-xs bg-brand/10 text-brand hover:bg-brand/20 rounded-md font-semibold"
+                                        onClick={() => updateStatus(c.id, "INTERVIEWING")}>
+                                        Schedule
+                                    </button>
+                                )}
+
                                 <button
-                                    className="btn min-h-8 px-2.5 py-1 text-xs bg-brand/10 text-brand hover:bg-brand/20 rounded-md font-semibold"
-                                    onClick={() => updateStatus(c.id, "INTERVIEWING")}>
-                                    Interview
-                                </button>
-                                <button
-                                    className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold"
+                                    className="btn min-h-8 px-2.5 py-1 text-xs bg-panel border border-line text-ink hover:bg-line rounded-md font-semibold"
                                     onClick={() => updateStatus(c.id, "HIRED")}>
                                     Hire
                                 </button>
