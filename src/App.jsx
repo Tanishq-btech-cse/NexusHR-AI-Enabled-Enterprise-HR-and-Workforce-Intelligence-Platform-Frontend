@@ -10,7 +10,6 @@ const navItems = [
     { id: "payroll", label: "Payroll", mark: "P" },
     { id: "performance", label: "Performance", mark: "R" },
     { id: "documents", label: "Documents", mark: "📄" },
-    // 🌟 Added Recruitment Tab for HR/Admin
     { id: "recruitment", label: "Recruitment", mark: "🎯", adminOnly: true },
     { id: "insights", label: "Insights", mark: "I", adminOnly: true },
     { id: "notifications", label: "Notifications", mark: "N", adminOnly: true }
@@ -55,8 +54,8 @@ function App() {
     const [attendanceMetrics, setAttendanceMetrics] = useState(null);
     const [insights, setInsights] = useState([]);
 
-    // Unauthenticated routing
-    const [authView, setAuthView] = useState("login"); // "login", "forgot", "reset"
+    // 🌟 Added "careers" to unauthenticated views
+    const [authView, setAuthView] = useState("login"); // "login", "forgot", "reset", "careers"
     const [resetToken, setResetToken] = useState("");
 
     // Check URL for reset token on load
@@ -185,12 +184,17 @@ function App() {
                 resetToken={resetToken}
                 onDone={() => {
                     setAuthView("login");
-                    // Clean up the URL after successful reset
                     window.history.replaceState({}, document.title, window.location.pathname);
                 }}
             />;
         }
-        return <LoginScreen onLogin={handleToken} onForgotPassword={() => setAuthView("forgot")} />;
+        // 🌟 NEW CAREERS ROUTE
+        if (authView === "careers") {
+            return <CareersScreen onBack={() => setAuthView("login")} />;
+        }
+
+        // Pass onCareers prop to LoginScreen
+        return <LoginScreen onLogin={handleToken} onForgotPassword={() => setAuthView("forgot")} onCareers={() => setAuthView("careers")} />;
     }
 
     return (
@@ -249,13 +253,8 @@ function App() {
                     {active === "attendance" && <Attendance api={api} employees={employees} selectedEmployee={currentEmployeeId} refreshAttendance={refreshAttendanceDashboard} runAction={runAction} userContext={userContext} />}
                     {active === "payroll" && <Payroll api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
                     {active === "performance" && <Performance api={api} selectedEmployee={currentEmployeeId} runAction={runAction} userContext={userContext} />}
-
-                    {/* 🌟 Document component with the passed token */}
                     {active === "documents" && <Documents api={api} runAction={runAction} userContext={userContext} currentEmployeeId={currentEmployeeId} token={token} />}
-
-                    {/* 🌟 RECRUITMENT ROUTE ADDED HERE */}
                     {active === "recruitment" && !userContext?.isEmployee && <Recruitment api={api} runAction={runAction} userContext={userContext} />}
-
                     {active === "insights" && !userContext?.isEmployee && <Insights api={api} insights={insights} selectedEmployee={currentEmployeeId} refresh={refreshInsights} runAction={runAction} />}
                     {active === "notifications" && !userContext?.isEmployee && <Notifications api={api} runAction={runAction} />}
                 </main>
@@ -264,7 +263,91 @@ function App() {
     );
 }
 
-function LoginScreen({ onLogin, onForgotPassword }) {
+// 🌟 NEW CAREERS SCREEN COMPONENT
+function CareersScreen({ onBack }) {
+    const [form, setForm] = useState({ name: "", email: "", targetRole: "Software Engineer" });
+    const [status, setStatus] = useState("");
+    const [busy, setBusy] = useState(false);
+
+    async function submit(event) {
+        event.preventDefault();
+        setBusy(true);
+        setStatus("");
+        try {
+            // Sends public POST request directly to the backend
+            const response = await fetch(`${API_BASE_URL}/api/v1/recruitment/apply`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(form)
+            });
+            await parseResponse(response);
+            setStatus({ type: "success", text: "Application submitted successfully! Our HR team will review it shortly." });
+            setForm({ name: "", email: "", targetRole: "Software Engineer" }); // clear form
+        } catch (err) {
+            setStatus({ type: "error", text: err.message || "An error occurred submitting your application." });
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <main className="grid min-h-screen place-items-center bg-panel px-4 py-12">
+            <div className="w-full max-w-lg rounded-lg border border-line bg-white p-8 shadow-soft">
+                <div className="text-center mb-8">
+                    <p className="text-xs font-semibold uppercase text-brand tracking-widest">Careers</p>
+                    <h1 className="mt-2 text-3xl font-bold text-ink">Join NexusHR</h1>
+                    <p className="mt-3 text-sm text-muted">Submit your details below to apply for our open positions. If your profile matches our needs, we will schedule a video interview with you.</p>
+                </div>
+
+                {status.type === "success" ? (
+                    <div className="p-6 mb-6 rounded-md border border-brand/20 bg-brand/5 text-center">
+                        <span className="text-3xl block mb-2">🎉</span>
+                        <p className="text-sm font-semibold text-brand">{status.text}</p>
+                        <button className="btn btn-primary mt-6 w-full" onClick={onBack}>Return to System Login</button>
+                    </div>
+                ) : (
+                    <form onSubmit={submit} className="space-y-5">
+                        <Field label="Full Name">
+                            <input className="field" type="text" placeholder="e.g. Jane Doe" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                        </Field>
+
+                        <Field label="Contact Email">
+                            <input className="field" type="email" placeholder="jane@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                        </Field>
+
+                        <Select
+                            label="Position Applying For"
+                            value={form.targetRole}
+                            onChange={(targetRole) => setForm({ ...form, targetRole })}
+                            options={[
+                                "Software Engineer",
+                                "Senior Full-Stack Developer",
+                                "Product Manager",
+                                "HR Specialist",
+                                "Data Scientist",
+                                "UI/UX Designer"
+                            ]}
+                        />
+
+                        {status.type === "error" && <p className="rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{status.text}</p>}
+
+                        <button className="btn btn-primary w-full mt-4 h-11 text-base" disabled={busy}>
+                            {busy ? "Submitting..." : "Submit Application"}
+                        </button>
+                    </form>
+                )}
+
+                <div className="mt-8 pt-6 border-t border-line text-center">
+                    <button type="button" onClick={onBack} className="text-sm font-semibold text-muted hover:text-brand hover:underline transition-colors">
+                        ← Back to Employee Login
+                    </button>
+                </div>
+            </div>
+        </main>
+    );
+}
+
+function LoginScreen({ onLogin, onForgotPassword, onCareers }) {
     const [email, setEmail] = useState("admin@nexushr.local");
     const [password, setPassword] = useState("ChangeMe123!");
     const [error, setError] = useState("");
@@ -290,31 +373,43 @@ function LoginScreen({ onLogin, onForgotPassword }) {
     }
 
     return (
-        <main className="grid min-h-screen place-items-center bg-panel px-4">
-            <form className="w-full max-w-md rounded-lg border border-line bg-white p-6 shadow-soft" onSubmit={submit}>
-                <p className="text-xs font-semibold uppercase text-muted">NexusHR</p>
-                <h1 className="mt-1 text-3xl font-bold text-ink">Sign in</h1>
-                <p className="mt-2 text-sm text-muted">Use standard administrative accounts or seeded employee credentials profile metrics.</p>
-                <div className="mt-6 space-y-4">
-                    <Field label="Email">
-                        <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-                    </Field>
-                    <Field
-                        label="Password"
-                        action={<button type="button" onClick={onForgotPassword} className="text-xs font-semibold text-brand hover:underline">Forgot password?</button>}
-                    >
-                        <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-                    </Field>
+        <main className="grid min-h-screen place-items-center bg-panel px-4 py-8">
+            <div className="w-full max-w-md">
+                <form className="rounded-lg border border-line bg-white p-6 shadow-soft" onSubmit={submit}>
+                    <p className="text-xs font-semibold uppercase text-muted">NexusHR</p>
+                    <h1 className="mt-1 text-3xl font-bold text-ink">Sign in</h1>
+                    <p className="mt-2 text-sm text-muted">Use standard administrative accounts or seeded employee credentials profile metrics.</p>
+                    <div className="mt-6 space-y-4">
+                        <Field label="Email">
+                            <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+                        </Field>
+                        <Field
+                            label="Password"
+                            action={<button type="button" onClick={onForgotPassword} className="text-xs font-semibold text-brand hover:underline">Forgot password?</button>}
+                        >
+                            <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+                        </Field>
+                    </div>
+                    <div className="mt-3 rounded border border-line bg-panel p-2.5 text-xs text-muted space-y-1">
+                        <p className="font-semibold text-ink">System Login Verification Nodes:</p>
+                        <p>👑 Admin: <code className="text-brand">admin@nexushr.local</code> / <code className="text-brand">admin123</code></p>
+                        <p>💼 Employee: <code className="text-brand">employee@nexushr.local</code> / <code className="text-brand">password123</code></p>
+                        <p className="mt-1 pt-1 border-t border-line text-gold font-medium">✨ Newly added team members can sign in with their unique work email and the default system string: <code className="text-brand">password123</code></p>
+                    </div>
+                    {error ? <p className="mt-4 rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
+                    <button className="btn btn-primary mt-6 w-full" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button>
+                </form>
+
+                {/* 🌟 LINK TO PUBLIC CAREERS SITE ADDED BELOW LOGIN FORM */}
+                <div className="mt-6 text-center">
+                    <p className="text-sm text-muted">
+                        Looking to join our team?{" "}
+                        <button onClick={onCareers} className="font-semibold text-brand hover:underline">
+                            View Open Positions & Apply
+                        </button>
+                    </p>
                 </div>
-                <div className="mt-3 rounded border border-line bg-panel p-2.5 text-xs text-muted space-y-1">
-                    <p className="font-semibold text-ink">System Login Verification Nodes:</p>
-                    <p>👑 Admin: <code className="text-brand">admin@nexushr.local</code> / <code className="text-brand">admin123</code></p>
-                    <p>💼 Employee: <code className="text-brand">employee@nexushr.local</code> / <code className="text-brand">password123</code></p>
-                    <p className="mt-1 pt-1 border-t border-line text-gold font-medium">✨ Newly added team members can sign in with their unique work email and the default system string: <code className="text-brand">password123</code></p>
-                </div>
-                {error ? <p className="mt-4 rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
-                <button className="btn btn-primary mt-6 w-full" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button>
-            </form>
+            </div>
         </main>
     );
 }
@@ -446,15 +541,12 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, 
         ["Notification success", formatPercent(metrics?.notificationSuccessRate)]
     ];
 
-    // 🌟 DYNAMIC ROLE-BASED TITLES
     let dashboardTitle = "Dashboard";
     let dashboardSubtitle = "System overview.";
 
     if (userContext?.roles) {
-        // Strip "ROLE_" prefix if it exists to make matching easier
         const roles = userContext.roles.map(r => r.replace("ROLE_", ""));
 
-        // Priority hierarchy for users with multiple roles
         if (roles.includes("ADMIN")) {
             dashboardTitle = "Admin Dashboard";
             dashboardSubtitle = "Global administrative control and system metrics.";
@@ -603,7 +695,6 @@ function Employees({ api, employees, refresh, runAction, userContext }) {
         }, "Employee records permanently removed");
     }
 
-    // 🌟 NEW: TOGGLE REMOTE WORK MODEL
     async function toggleRemote(id, isCurrentlyRemote) {
         await runAction(async () => {
             await api.patch(`/api/v1/employees/${id}/remote?isRemote=${!isCurrentlyRemote}`);
@@ -616,27 +707,20 @@ function Employees({ api, employees, refresh, runAction, userContext }) {
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
                 <Panel title="Employee directory">
                     <DataTable
-                        // 🌟 Added "Work Model" to columns
                         columns={["Code", "Name", "Email", "Team", "Work Model", "Status", "Actions"]}
                         rows={employees.map((employee) => [
                             employee.employeeCode,
                             `${employee.firstName} ${employee.lastName}`,
                             employee.workEmail,
                             [employee.department, employee.designation].filter(Boolean).join(" / ") || "-",
-
-                            // 🌟 Added Remote/Office Badge
                             <span className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${employee.remote ? "bg-brand/10 text-brand" : "bg-panel border border-line text-ink"}`}>
                     {employee.remote ? "REMOTE" : "OFFICE"}
                   </span>,
-
                             <Badge value={employee.status} />,
-
                             <div className="flex flex-wrap gap-1.5" key={employee.id}>
-                                {/* 🌟 Added Remote Toggle Button */}
                                 <button className="btn btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => toggleRemote(employee.id, !!employee.remote)}>
                                     {employee.remote ? "Set to Office" : "Set to Remote"}
                                 </button>
-
                                 <button className="btn btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => offboard(employee.id)}>Offboard</button>
                                 <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral hover:bg-coral/20 border border-coral/20 rounded-md font-semibold" onClick={() => removeEmployee(employee.id)}>Delete</button>
                             </div>
@@ -691,8 +775,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     const [employeeId, setEmployeeId] = useState(selectedEmployee);
     const [leave, setLeave] = useState({ leaveType: "ANNUAL", startDate: today, endDate: today, reason: "" });
     const [balances, setBalances] = useState([]);
-
-    // 🌟 STATE FOR ATTENDANCE AND LOGS
     const [pendingLeaves, setPendingLeaves] = useState([]);
     const [attendanceRecords, setAttendanceRecords] = useState([]);
 
@@ -700,7 +782,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
         setEmployeeId(selectedEmployee);
     }, [selectedEmployee]);
 
-    // 🌟 ONLY ADMIN AND HR CAN SEE THE MASTER TABLE
     const isAdminOrHR = userContext?.roles?.some(r => r.includes("ADMIN") || r.includes("HR"));
 
     async function loadPendingLeaves() {
@@ -708,7 +789,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
         await runAction(async () => {
             const response = await api.get(`/api/v1/attendance/dashboard?date=${today}`);
             setPendingLeaves(response?.pendingRequests || response?.rawRequests || []);
-            // Capture the raw records array added to the Java backend map payload
             setAttendanceRecords(response?.todaysRecords || []);
         });
     }
@@ -756,7 +836,6 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
         }
     }, [userContext]);
 
-    // 🌟 COLOR-CODE HELPER FOR PUNCH TIMES
     function formatTimeWithColor(isoString, type) {
         if (!isoString) return <span className="text-muted">-</span>;
 
@@ -767,14 +846,11 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
 
         let isRed = false;
         if (type === 'IN') {
-            // Late if after 9:00 AM
             isRed = hours > 9 || (hours === 9 && minutes > 0);
         } else if (type === 'OUT') {
-            // Early if before 5:00 PM (17:00)
             isRed = hours < 17;
         }
 
-        // Apply strict green if valid, coral/red if invalid
         return (
             <span className={`font-semibold ${isRed ? 'text-coral' : ''}`} style={{ color: !isRed ? '#10b981' : undefined }}>
                 {timeString}
@@ -821,14 +897,12 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
                 </Panel>
             </div>
 
-            {/* 🌟 NEW: TODAY'S ATTENDANCE LOGS FOR ADMIN AND HR ONLY */}
             {isAdminOrHR && (
                 <Panel title="Today's Attendance Logs" action={<button className="btn btn-secondary" onClick={loadPendingLeaves}>Refresh Logs</button>}>
                     {attendanceRecords.length ? (
                         <DataTable
                             columns={["Employee", "Punch In", "Punch Out", "Status"]}
                             rows={attendanceRecords.map((record) => {
-                                // Match the employee entity to display their actual name
                                 const emp = employees.find((e) => e.id === record.employeeId);
                                 const empName = emp ? `${emp.firstName} ${emp.lastName}` : shortId(record.employeeId);
 
@@ -1121,7 +1195,6 @@ function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
         }, "Document permanently deleted from the secure vault.");
     }
 
-    // 🌟 SECURE FILE VIEWER
     async function viewDoc(docId) {
         const url = `${API_BASE_URL}/api/v1/documents/${docId}/download`;
         try {
@@ -1163,7 +1236,6 @@ function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
                         {doc.verified ? "APPROVED" : "PENDING"}
                       </span>,
                                     <div className="flex gap-1.5" key={doc.id}>
-                                        {/* 🌟 Employee View Button */}
                                         <button className="btn min-h-8 px-2.5 py-1 text-xs bg-panel border border-line rounded-md hover:bg-line font-semibold" onClick={() => viewDoc(doc.id)}>View</button>
                                         <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral border border-coral/20 rounded-md hover:bg-coral/20 font-semibold" onClick={() => deleteMyDoc(doc.id)}>Delete</button>
                                     </div>
@@ -1182,7 +1254,6 @@ function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
                                 <Badge value={doc.documentType} />,
                                 doc.fileName,
                                 <div className="flex gap-1.5" key={doc.id}>
-                                    {/* 🌟 Admin View Button */}
                                     <button className="btn min-h-8 px-2.5 py-1 text-xs bg-panel border border-line rounded-md hover:bg-line font-semibold" onClick={() => viewDoc(doc.id)}>View</button>
                                     <button className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold" onClick={() => verifyDoc(doc.id, true)}>Approve</button>
                                     <button className="btn min-h-8 px-2.5 py-1 text-xs bg-coral/10 text-coral border border-coral/20 rounded-md hover:bg-coral/20 font-semibold" onClick={() => verifyDoc(doc.id, false)}>Reject</button>
@@ -1196,9 +1267,7 @@ function Documents({ api, runAction, userContext, currentEmployeeId, token }) {
     );
 }
 
-// 🌟 NEW: SECURE VIDEO INTERVIEW ROOM COMPONENT
 function VideoMeeting({ candidate, onClose, userContext }) {
-    // Generate a unique, unguessable room ID using the candidate's UUID
     const roomName = `NexusHR-Interview-${candidate.id}`;
     const domain = "meet.jit.si";
 
@@ -1220,7 +1289,6 @@ function VideoMeeting({ candidate, onClose, userContext }) {
                 </div>
             </div>
             <div className="flex-1 bg-ink">
-                {/* Embed Open-Source Jitsi Video Conf */}
                 <iframe
                     src={`https://${domain}/${roomName}?userInfo.displayName="${userContext?.email}"`}
                     allow="camera; microphone; fullscreen; display-capture; autoplay"
@@ -1232,7 +1300,6 @@ function VideoMeeting({ candidate, onClose, userContext }) {
     );
 }
 
-// 🌟 UPDATED: RECRUITMENT COMPONENT FOR HR
 function Recruitment({ api, runAction, userContext }) {
     const [candidates, setCandidates] = useState([]);
     const [activeMeeting, setActiveMeeting] = useState(null);
@@ -1254,7 +1321,6 @@ function Recruitment({ api, runAction, userContext }) {
         }, `Candidate moved to ${newStatus}`);
     }
 
-    // If an interview is active, hijack the screen with the video caller
     if (activeMeeting) {
         return <VideoMeeting candidate={activeMeeting} onClose={() => setActiveMeeting(null)} userContext={userContext} />;
     }
@@ -1272,8 +1338,6 @@ function Recruitment({ api, runAction, userContext }) {
                             c.appliedDate,
                             <Badge value={c.status} key={`badge-${c.id}`}/>,
                             <div className="flex gap-1.5" key={c.id}>
-
-                                {/* 🌟 DYNAMIC BUTTON: Switch between Scheduling and Calling */}
                                 {c.status === "INTERVIEWING" ? (
                                     <button
                                         className="btn min-h-8 px-2.5 py-1 text-xs bg-brand text-white rounded-md font-semibold flex items-center gap-1 shadow-sm"
@@ -1287,7 +1351,6 @@ function Recruitment({ api, runAction, userContext }) {
                                         Schedule
                                     </button>
                                 )}
-
                                 <button
                                     className="btn min-h-8 px-2.5 py-1 text-xs bg-panel border border-line text-ink hover:bg-line rounded-md font-semibold"
                                     onClick={() => updateStatus(c.id, "HIRED")}>
@@ -1302,7 +1365,7 @@ function Recruitment({ api, runAction, userContext }) {
                         ])}
                     />
                 ) : (
-                    <Empty text="No candidates have applied yet. Send a POST request to /api/v1/recruitment/apply to test." />
+                    <Empty text="No candidates have applied yet." />
                 )}
             </Panel>
         </Page>
