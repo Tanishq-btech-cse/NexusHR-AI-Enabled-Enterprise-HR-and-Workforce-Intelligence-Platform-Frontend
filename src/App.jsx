@@ -686,17 +686,25 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
     const [employeeId, setEmployeeId] = useState(selectedEmployee);
     const [leave, setLeave] = useState({ leaveType: "ANNUAL", startDate: today, endDate: today, reason: "" });
     const [balances, setBalances] = useState([]);
+
+    // 🌟 STATE FOR ATTENDANCE AND LOGS
     const [pendingLeaves, setPendingLeaves] = useState([]);
+    const [attendanceRecords, setAttendanceRecords] = useState([]);
 
     useEffect(() => {
         setEmployeeId(selectedEmployee);
     }, [selectedEmployee]);
+
+    // 🌟 ONLY ADMIN AND HR CAN SEE THE MASTER TABLE
+    const isAdminOrHR = userContext?.roles?.some(r => r.includes("ADMIN") || r.includes("HR"));
 
     async function loadPendingLeaves() {
         if (userContext?.isEmployee) return;
         await runAction(async () => {
             const response = await api.get(`/api/v1/attendance/dashboard?date=${today}`);
             setPendingLeaves(response?.pendingRequests || response?.rawRequests || []);
+            // Capture the raw records array added to the Java backend map payload
+            setAttendanceRecords(response?.todaysRecords || []);
         });
     }
 
@@ -743,6 +751,32 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
         }
     }, [userContext]);
 
+    // 🌟 COLOR-CODE HELPER FOR PUNCH TIMES
+    function formatTimeWithColor(isoString, type) {
+        if (!isoString) return <span className="text-muted">-</span>;
+
+        const date = new Date(isoString);
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        let isRed = false;
+        if (type === 'IN') {
+            // Late if after 9:00 AM
+            isRed = hours > 9 || (hours === 9 && minutes > 0);
+        } else if (type === 'OUT') {
+            // Early if before 5:00 PM (17:00)
+            isRed = hours < 17;
+        }
+
+        // Apply strict green if valid, coral/red if invalid
+        return (
+            <span className={`font-semibold ${isRed ? 'text-coral' : ''}`} style={{ color: !isRed ? '#10b981' : undefined }}>
+                {timeString}
+            </span>
+        );
+    }
+
     return (
         <Page title="Attendance Tracker" subtitle="Punch simulation logging tracks directly into the database layers.">
             <div className="grid gap-4 xl:grid-cols-2">
@@ -781,6 +815,31 @@ function Attendance({ api, employees, selectedEmployee, refreshAttendance, runAc
                     </form>
                 </Panel>
             </div>
+
+            {/* 🌟 NEW: TODAY'S ATTENDANCE LOGS FOR ADMIN AND HR ONLY */}
+            {isAdminOrHR && (
+                <Panel title="Today's Attendance Logs" action={<button className="btn btn-secondary" onClick={loadPendingLeaves}>Refresh Logs</button>}>
+                    {attendanceRecords.length ? (
+                        <DataTable
+                            columns={["Employee", "Punch In", "Punch Out", "Status"]}
+                            rows={attendanceRecords.map((record) => {
+                                // Match the employee entity to display their actual name
+                                const emp = employees.find((e) => e.id === record.employeeId);
+                                const empName = emp ? `${emp.firstName} ${emp.lastName}` : shortId(record.employeeId);
+
+                                return [
+                                    empName,
+                                    formatTimeWithColor(record.checkInAt, "IN"),
+                                    formatTimeWithColor(record.checkOutAt, "OUT"),
+                                    <Badge value={record.status} />
+                                ];
+                            })}
+                        />
+                    ) : (
+                        <Empty text="No punch records found for today." />
+                    )}
+                </Panel>
+            )}
 
             {!userContext?.isEmployee && (
                 <Panel title="Pending Leave Approvals Task Queue" action={<button className="btn btn-secondary" onClick={loadPendingLeaves}>Refresh Queue</button>}>
