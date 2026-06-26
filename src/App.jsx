@@ -247,10 +247,24 @@ function EmployeeProfileOnboarding({ api, runAction, employee }) {
         }, "Edit request sent to Administration.");
     }
 
+    function fillDummyData() {
+        setProfile({
+            ...profile,
+            fatherName: "Ramesh Sharma",
+            motherName: "Sunita Sharma",
+            address: "Flat 4B, Silver Oaks Apartments\nSector 44, Gurugram\nHaryana 122003",
+            aadhaarNumber: "4567" + Math.floor(10000000 + Math.random() * 90000000).toString(),
+            panNumber: "ABCDE" + Math.floor(1000 + Math.random() * 9000).toString() + "F"
+        });
+    }
+
     const isLocked = profile.profileCompleted && profile.editRequestStatus !== "APPROVED";
 
     return (
-        <Panel title="Personal Information Registry">
+        <Panel
+            title="Personal Information Registry"
+            action={!isLocked && <button type="button" className="btn btn-secondary text-xs" onClick={fillDummyData}>✨ Auto-Fill Dummy</button>}
+        >
             {!profile.profileCompleted && (
                 <div className="mb-4 bg-coral/10 border border-coral text-coral px-4 py-3 rounded-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                     <span className="font-bold text-sm">⚠️ Mandatory Profile Completion Required</span>
@@ -416,6 +430,18 @@ function CareersScreen({ onBack }) {
     const [status, setStatus] = useState("");
     const [busy, setBusy] = useState(false);
 
+    function fillDummyData() {
+        const randomId = Math.floor(Math.random() * 10000);
+        const roles = ["Software Engineer", "Senior Full-Stack Developer", "Product Manager", "HR Specialist", "Data Scientist", "UI/UX Designer"];
+        const randomRole = roles[Math.floor(Math.random() * roles.length)];
+
+        setForm({
+            name: `Test Candidate ${randomId}`,
+            email: `candidate.${randomId}@example.com`,
+            targetRole: randomRole
+        });
+    }
+
     async function submit(event) {
         event.preventDefault(); setBusy(true); setStatus("");
         try {
@@ -440,10 +466,18 @@ function CareersScreen({ onBack }) {
                     </div>
                 ) : (
                     <form onSubmit={submit} className="space-y-5">
+                        <div className="flex justify-end">
+                            <button type="button" className="text-xs font-semibold text-brand hover:underline" onClick={fillDummyData}>
+                                ✨ Auto-Fill Dummy Data
+                            </button>
+                        </div>
+
                         <Field label="Full Name"><input className="field" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></Field>
                         <Field label="Contact Email"><input className="field" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></Field>
                         <Select label="Position Applying For" value={form.targetRole} onChange={(targetRole) => setForm({ ...form, targetRole })} options={["Software Engineer", "Senior Full-Stack Developer", "Product Manager", "HR Specialist", "Data Scientist", "UI/UX Designer"]} />
+
                         {status.type === "error" && <p className="rounded-md bg-coral/10 px-3 py-2 text-sm text-coral">{status.text}</p>}
+
                         <button className="btn btn-primary w-full mt-4 h-11 text-base" disabled={busy}>{busy ? "Submitting..." : "Submit Application"}</button>
                     </form>
                 )}
