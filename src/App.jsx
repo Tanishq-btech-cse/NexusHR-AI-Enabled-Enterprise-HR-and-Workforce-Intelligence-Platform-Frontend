@@ -43,7 +43,6 @@ function App() {
     const [metrics, setMetrics] = useState(null);
     const [attendanceMetrics, setAttendanceMetrics] = useState(null);
     const [insights, setInsights] = useState([]);
-
     const [authView, setAuthView] = useState("login");
     const [resetToken, setResetToken] = useState("");
 
@@ -60,11 +59,9 @@ function App() {
         if (!token) return null;
         const payload = parseJwt(token);
         if (!payload) return null;
-
         const parsedRoles = payload.roles || [];
         const isEmployee = parsedRoles.includes("EMPLOYEE") || parsedRoles.includes("ROLE_EMPLOYEE");
         const isAdmin = parsedRoles.includes("ADMIN") || parsedRoles.includes("ROLE_ADMIN") || parsedRoles.includes("HR");
-
         return { email: payload.sub, roles: parsedRoles, isEmployee: isEmployee && !isAdmin };
     }, [token]);
 
@@ -213,6 +210,7 @@ function EmployeeProfileOnboarding({ api, runAction, employee }) {
     }
 
     useEffect(() => { loadProfile(); }, []);
+
     useEffect(() => {
         if (profile.profileCompleted) return;
         const joinDate = employee?.joiningDate ? new Date(employee.joiningDate).getTime() : new Date().getTime();
@@ -296,7 +294,7 @@ function AdminProfileApprovals({ api, runAction }) {
 
     async function loadRequests() {
         try {
-            const data = await api.get("/api/v1/employees/profile-edit-requests");
+            const data = await api.get("/api/v1/employees/requests/profile-edits");
             setRequests(data || []);
         } catch(e) { }
     }
@@ -326,7 +324,6 @@ function AdminProfileApprovals({ api, runAction }) {
         </Panel>
     );
 }
-
 
 function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, api, runAction, employees }) {
     const [aiQuery, setAiQuery] = useState("");
@@ -362,14 +359,12 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, 
     return (
         <Page title={dashboardTitle} subtitle={dashboardSubtitle}>
 
-            {}
             {userContext?.isEmployee && employees.length > 0 && (
                 <div className="mb-6">
                     <EmployeeProfileOnboarding api={api} runAction={runAction} employee={employees[0]} />
                 </div>
             )}
 
-            {}
             {!userContext?.isEmployee && (
                 <div className="mb-6 grid gap-4 xl:grid-cols-2">
                     <Panel title="✨ Ask Nexus AI">
@@ -382,7 +377,6 @@ function Dashboard({ metrics, attendanceMetrics, onLoadAttendance, userContext, 
                         {aiResponse && <div className="mt-4 rounded-md border border-brand/20 bg-brand/5 p-4 text-sm text-ink whitespace-pre-wrap leading-relaxed">{aiResponse}</div>}
                     </Panel>
 
-                    {}
                     <AdminProfileApprovals api={api} runAction={runAction} />
                 </div>
             )}
